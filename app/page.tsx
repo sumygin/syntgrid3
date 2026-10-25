@@ -399,6 +399,8 @@ export default function App() {
   const isLoggedIn = status === 'authenticated';  
   const [isSyncingOAuth, setIsSyncingOAuth] = useState<boolean>(false);
 
+  
+
   // 1. Initialize empty states here
   const [calendars, setCalendars] = useState<CalendarItem[]>([]);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
