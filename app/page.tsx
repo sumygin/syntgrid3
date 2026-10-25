@@ -1173,11 +1173,12 @@ export default function App() {
     isLoggedIn && loadedAccountEmail !== (session?.user?.email ?? null);
   if (status === 'loading' || isLoadingAccountData) {
     return (
-      <div className="min-h-screen bg-[#121212] flex items-center justify-center text-zinc-500 text-xs">
+      <div className="relative min-h-screen bg-[#121212] flex items-center justify-center text-zinc-500 text-xs">
         <div className="flex flex-col items-center gap-4" role="status" aria-live="polite">
           <span className="h-9 w-9 animate-spin rounded-full border-2 border-[#333] border-t-[#ff9f43]" />
           <span>{status === 'loading' ? 'Checking your session…' : 'Loading your calendars and friends…'}</span>
         </div>
+        <span className="absolute bottom-6 text-[11px] text-zinc-600">by makxyak</span>
       </div>
     );
   }
@@ -1243,6 +1244,7 @@ export default function App() {
             <a href="/privacy" className="hover:text-zinc-300 hover:underline">Privacy Policy</a>
             <a href="/terms" className="hover:text-zinc-300 hover:underline">Terms of Service</a>
           </nav>
+          <p className="mt-5 text-center text-[11px] text-zinc-600">by makxyak</p>
         </div>
       </div>
     );
@@ -1268,6 +1270,9 @@ export default function App() {
             />
             <span className="font-bold tracking-tight text-sm text-white hidden sm:inline">
               syntgrid
+            </span>
+            <span className="hidden sm:inline text-[10px] text-zinc-500">
+              by makxyak
             </span>
           </div>
 
