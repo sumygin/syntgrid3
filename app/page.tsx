@@ -985,6 +985,10 @@ export default function App() {
           <a href="/tutorial" className="mt-5 block text-center text-xs text-sky-300 hover:underline">
             How to export and upload your Imperial calendar
           </a>
+          <nav className="mt-4 flex justify-center gap-4 text-[11px] text-zinc-500">
+            <a href="/privacy" className="hover:text-zinc-300 hover:underline">Privacy Policy</a>
+            <a href="/terms" className="hover:text-zinc-300 hover:underline">Terms of Service</a>
+          </nav>
         </div>
       </div>
     );
@@ -1080,6 +1084,10 @@ export default function App() {
           >
             Calendar tutorial
           </a>
+          <nav className="hidden xl:flex items-center gap-2 text-[11px] text-zinc-500">
+            <a href="/privacy" className="hover:text-zinc-300 hover:underline">Privacy</a>
+            <a href="/terms" className="hover:text-zinc-300 hover:underline">Terms</a>
+          </nav>
 
           {/* Logged-in account */}
           <div className="flex items-center gap-2 pl-2 border-l border-[#2a2a2a]">
