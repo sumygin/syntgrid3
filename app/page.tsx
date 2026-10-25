@@ -433,15 +433,23 @@ export default function App() {
   const dateLabel = new Intl.DateTimeFormat('en-GB', {
     day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC'
   });
-  const { todayWeekOffset, todayDay } = useMemo(() => {
-  const londonToday = new Intl.DateTimeFormat('en-GB', {
-    year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Europe/London'
-  }).formatToParts(new Date());
-  const todayPart = (name: string) => Number(londonToday.find(p => p.type === name)?.value);
-  const tDay = Date.UTC(todayPart('year'), todayPart('month') - 1, todayPart('day'));
-  const tWeekOffset = Math.floor((tDay - BASE_WEEK_START_UTC) / (7 * 86_400_000));
-  return { todayWeekOffset: tWeekOffset, todayDay: tDay };
-}, []);
+  // 1. Define safe default states at the top of your App component:
+  const [todayWeekOffset, setTodayWeekOffset] = useState<number>(0);
+  const [todayDay, setTodayDay] = useState<number>(Date.UTC(2026, 9, 19));
+
+  // 2. Compute the real date inside a useEffect (runs only on client mount):
+  useEffect(() => {
+    const londonToday = new Intl.DateTimeFormat('en-GB', {
+      year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Europe/London'
+    }).formatToParts(new Date());
+    const todayPart = (name: string) => Number(londonToday.find(p => p.type === name)?.value);
+    const tDay = Date.UTC(todayPart('year'), todayPart('month') - 1, todayPart('day'));
+    const tWeekOffset = Math.floor((tDay - BASE_WEEK_START_UTC) / (7 * 86_400_000));
+    
+    setTodayDay(tDay);
+    setTodayWeekOffset(tWeekOffset);
+
+  }, []);
   // Hover tooltip state
   const [hoveredEvent, setHoveredEvent] = useState<HoveredEventInfo | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
