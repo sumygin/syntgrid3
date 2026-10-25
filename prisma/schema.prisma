@@ -1,0 +1,32 @@
+datasource db {
+    provider = "mongodb"
+    url      = env("DATABASE_URL")
+  }
+
+  generator client {
+    provider = "prisma-client-js"
+  }
+
+  model User {
+    id           String   @id @default(auto()) @map("_id") @db.ObjectId
+    email        String   @unique
+    name         String
+    refreshToken String?
+    fallbackIcs  String?
+    customCals   CustomCalendar[]
+  }
+
+  model Friendship {
+    id         String   @id @default(auto()) @map("_id") @db.ObjectId
+    senderId   String
+    receiverId String
+    status     String   @default("PENDING")
+  }
+
+  model CustomCalendar {
+    id         String   @id @default(auto()) @map("_id") @db.ObjectId
+    ownerId    String   @db.ObjectId
+    name       String
+    eventsJson Json
+    owner      User     @relation(fields: [ownerId], references: [id])
+  }
