@@ -94,6 +94,15 @@ interface FriendGroup {
   isActive: boolean;
 }
 
+interface CalendarPanState {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  startScrollLeft: number;
+  startScrollTop: number;
+  hasMoved: boolean;
+}
+
 export interface HoveredEventInfo extends PositionedEvent {
   ownerName: string;
   ownerEmail: string;
@@ -519,6 +528,8 @@ export default function App() {
   const [isPersonalCalendarEditorOpen, setIsPersonalCalendarEditorOpen] = useState(false);
   const [editingPersonalEvents, setEditingPersonalEvents] = useState<CalendarEvent[]>([]);
   const [isSavingPersonalCalendar, setIsSavingPersonalCalendar] = useState(false);
+  const calendarPanRef = useRef<CalendarPanState | null>(null);
+  const [isPanningCalendar, setIsPanningCalendar] = useState(false);
 
   // Rest of your state and handlers...
   // Week offset state
@@ -776,6 +787,45 @@ export default function App() {
     setCalendars((prev) =>
       prev.map((c) => (c.id === id ? { ...c, checked: !c.checked } : c))
     );
+  };
+
+  const startCalendarPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || event.target instanceof Element &&
+      event.target.closest('button, a, input, select, textarea, [role="button"], [data-calendar-event]')) {
+      return;
+    }
+
+    const scrollContainer = event.currentTarget;
+    calendarPanRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startScrollLeft: scrollContainer.scrollLeft,
+      startScrollTop: scrollContainer.scrollTop,
+      hasMoved: false
+    };
+    scrollContainer.setPointerCapture(event.pointerId);
+    setIsPanningCalendar(true);
+    event.preventDefault();
+  };
+
+  const panCalendar = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pan = calendarPanRef.current;
+    if (!pan || pan.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - pan.startX;
+    const deltaY = event.clientY - pan.startY;
+    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) pan.hasMoved = true;
+    if (!pan.hasMoved) return;
+
+    event.currentTarget.scrollLeft = pan.startScrollLeft - deltaX;
+    event.currentTarget.scrollTop = pan.startScrollTop - deltaY;
+  };
+
+  const stopCalendarPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (calendarPanRef.current?.pointerId !== event.pointerId) return;
+    calendarPanRef.current = null;
+    setIsPanningCalendar(false);
   };
 
   const createFriendGroup = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -1383,7 +1433,15 @@ export default function App() {
            ================================================================== */}
         <main className="flex-1 flex flex-col overflow-hidden bg-[#121212]">
           {/* Scrollable Wrapper */}
-          <div className="flex-1 overflow-auto relative">
+          <div
+            className={`flex-1 overflow-auto relative touch-none ${
+              isPanningCalendar ? 'cursor-grabbing' : 'cursor-grab'
+            }`}
+            onPointerDown={startCalendarPan}
+            onPointerMove={panCalendar}
+            onPointerUp={stopCalendarPan}
+            onPointerCancel={stopCalendarPan}
+          >
             <div
               className="min-h-full flex flex-col"
               style={{
@@ -1547,6 +1605,7 @@ export default function App() {
                                 return (
                                   <div
                                     key={ev.id}
+                                    data-calendar-event
                                     onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => {
                                       const rect = e.currentTarget.getBoundingClientRect();
                                       setTooltipPos({
