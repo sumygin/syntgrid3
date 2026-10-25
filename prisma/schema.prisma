@@ -27,6 +27,14 @@ datasource db {
     @@unique([senderId, receiverId])
   }
 
+  model FriendGroup {
+    id          String   @id @default(auto()) @map("_id") @db.ObjectId
+    ownerEmail  String
+    name        String
+    friendEmails String[]
+    isActive    Boolean  @default(true)
+  }
+
   model CustomCalendar {
     id         String   @id @default(auto()) @map("_id") @db.ObjectId
     ownerId    String   @db.ObjectId

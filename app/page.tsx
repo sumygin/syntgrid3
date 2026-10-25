@@ -87,6 +87,13 @@ interface FriendProfile {
   image: string | null;
 }
 
+interface FriendGroup {
+  id: string;
+  name: string;
+  friendEmails: string[];
+  isActive: boolean;
+}
+
 export interface HoveredEventInfo extends PositionedEvent {
   ownerName: string;
   ownerEmail: string;
@@ -504,6 +511,10 @@ export default function App() {
   // 1. Initialize empty states here
   const [calendars, setCalendars] = useState<CalendarItem[]>([]);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [friendGroups, setFriendGroups] = useState<FriendGroup[]>([]);
+  const [isCreatingFriendGroup, setIsCreatingFriendGroup] = useState(false);
+  const [newFriendGroupName, setNewFriendGroupName] = useState('');
+  const [draggingFriendEmail, setDraggingFriendEmail] = useState<string | null>(null);
   const [isPersonalCalendarEditorOpen, setIsPersonalCalendarEditorOpen] = useState(false);
   const [editingPersonalEvents, setEditingPersonalEvents] = useState<CalendarEvent[]>([]);
   const [isSavingPersonalCalendar, setIsSavingPersonalCalendar] = useState(false);
@@ -661,6 +672,8 @@ export default function App() {
         requests: { id: string; email: string; name: string }[];
         friends: { email: string; name: string }[];
       }>(friendsResponse);
+      const groupsResponse = await fetch('/api/friend-groups', { signal: controller.signal });
+      const groupsData = await readApiResponse<{ groups: FriendGroup[] }>(groupsResponse);
       const pendingRequests: FriendRequest[] = friendsData.requests.map(
         (request: { id: string; email: string; name: string }) => ({
           ...request,
@@ -693,6 +706,14 @@ export default function App() {
           };
         })
       );
+      const inactiveFriendEmails = new Set(
+        groupsData.groups
+          .filter((group) => !group.isActive)
+          .flatMap((group) => group.friendEmails)
+      );
+      friendCalendars.forEach((calendar) => {
+        if (inactiveFriendEmails.has(calendar.email.toLowerCase())) calendar.checked = false;
+      });
       const extrasResponse = await fetch('/api/calendar/extra', { signal: controller.signal });
       const extrasData = await readApiResponse<{
         calendars: { id: string; name: string; events: CalendarEvent[] }[];
@@ -710,6 +731,7 @@ export default function App() {
       }));
 
       setFriendRequests(pendingRequests);
+      setFriendGroups(groupsData.groups);
       setCalendars((previous) => [
         ownCalendar,
         ...previous.filter((calendar) =>
@@ -750,6 +772,95 @@ export default function App() {
     setCalendars((prev) =>
       prev.map((c) => (c.id === id ? { ...c, checked: !c.checked } : c))
     );
+  };
+
+  const createFriendGroup = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = newFriendGroupName.trim();
+    if (!name) return;
+    try {
+      const response = await fetch('/api/friend-groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      const data = await readApiResponse<{ group: FriendGroup }>(response);
+      setFriendGroups((groups) => [...groups, data.group].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewFriendGroupName('');
+      setIsCreatingFriendGroup(false);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not create friend group.');
+    }
+  };
+
+  const toggleFriendInGroup = async (group: FriendGroup, friendEmail: string) => {
+    const normalizedEmail = friendEmail.trim().toLowerCase();
+    const isMember = group.friendEmails.includes(normalizedEmail);
+    const friendEmails = isMember
+      ? group.friendEmails.filter((email) => email !== normalizedEmail)
+      : [...group.friendEmails, normalizedEmail];
+    try {
+      const response = await fetch(`/api/friend-groups/${encodeURIComponent(group.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ friendEmails })
+      });
+      const data = await readApiResponse<{ group: FriendGroup }>(response);
+      setFriendGroups((groups) =>
+        groups.map((item) => item.id === group.id ? data.group : item)
+      );
+      setCalendars((items) => items.map((calendar) =>
+        calendar.type === 'outlook-friend' &&
+        calendar.email.toLowerCase() === normalizedEmail
+          ? {
+              ...calendar,
+              checked: isMember ? calendar.checked : data.group.isActive
+            }
+          : calendar
+      ));
+      showToast(
+        isMember
+          ? `Removed ${normalizedEmail} from "${group.name}".`
+          : `Added ${normalizedEmail} to "${group.name}".`
+      );
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not add friend to group.');
+    }
+  };
+
+  const toggleFriendGroup = async (group: FriendGroup) => {
+    const isActive = !group.isActive;
+    try {
+      const response = await fetch(`/api/friend-groups/${encodeURIComponent(group.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive })
+      });
+      const data = await readApiResponse<{ group: FriendGroup }>(response);
+      const memberEmails = new Set(data.group.friendEmails.map((email) => email.toLowerCase()));
+      setFriendGroups((groups) =>
+        groups.map((item) => item.id === group.id ? data.group : item)
+      );
+      setCalendars((items) => items.map((calendar) =>
+        calendar.type === 'outlook-friend' && memberEmails.has(calendar.email.toLowerCase())
+          ? { ...calendar, checked: isActive }
+          : calendar
+      ));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not update friend group.');
+    }
+  };
+
+  const deleteFriendGroup = async (group: FriendGroup) => {
+    try {
+      const response = await fetch(`/api/friend-groups/${encodeURIComponent(group.id)}`, {
+        method: 'DELETE'
+      });
+      await readApiResponse<{ ok: boolean }>(response);
+      setFriendGroups((groups) => groups.filter((item) => item.id !== group.id));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not delete friend group.');
+    }
   };
 
   // Delete a friend/custom calendar
@@ -1572,24 +1683,131 @@ export default function App() {
             {/* 2. CALENDARS & FRIENDS COMPARISON CHECKLIST */}
             <div>
               <div className="flex items-center justify-between mb-2.5">
-                <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                  Calendars & Friends
-                </span>
-                <span className="text-[11px] text-zinc-500">
-                  {activeCalendars.length} of {calendarsWithColors.length} active
-                </span>
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Calendars & Friends
+                  </span>
+                  <span className="ml-2 text-[11px] text-zinc-500">
+                    {activeCalendars.length} of {calendarsWithColors.length} active
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCreatingFriendGroup((isCreating) => !isCreating)}
+                  aria-label="Create friend group"
+                  title="Create friend group"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#383838] bg-[#222] text-zinc-300 transition hover:border-[#ff9f43] hover:text-[#ffbd78]"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
               </div>
+
+              {isCreatingFriendGroup && (
+                <form onSubmit={createFriendGroup} className="mb-3 flex gap-2">
+                  <input
+                    autoFocus
+                    required
+                    maxLength={40}
+                    value={newFriendGroupName}
+                    onChange={(event) => setNewFriendGroupName(event.target.value)}
+                    placeholder="Group name"
+                    aria-label="New friend group name"
+                    className="min-w-0 flex-1 rounded-lg border border-[#383838] bg-[#121212] px-2.5 py-2 text-xs text-white focus:border-[#ff9f43] focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-[#ff9f43] px-3 py-2 text-xs font-bold text-[#121212] hover:brightness-110"
+                  >
+                    Create
+                  </button>
+                </form>
+              )}
+
+              {friendGroups.length > 0 && (
+                <div className="mb-3 space-y-2">
+                  {friendGroups.map((group) => (
+                    <div
+                      key={group.id}
+                      onDragOver={(event) => {
+                        if (draggingFriendEmail) event.preventDefault();
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const friendEmail =
+                          event.dataTransfer.getData('text/plain') || draggingFriendEmail;
+                        if (friendEmail) void toggleFriendInGroup(group, friendEmail);
+                        setDraggingFriendEmail(null);
+                      }}
+                      className={`rounded-xl border p-2.5 transition ${
+                        draggingFriendEmail
+                          ? 'border-dashed border-[#ff9f43] bg-[#ff9f43]/5'
+                          : 'border-[#343434] bg-[#1c1c1c]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void toggleFriendGroup(group)}
+                          role="switch"
+                          aria-checked={group.isActive}
+                          aria-label={`${group.isActive ? 'Deactivate' : 'Activate'} ${group.name}`}
+                          className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition ${
+                            group.isActive ? 'bg-emerald-400' : 'bg-[#444]'
+                          }`}
+                        >
+                          <span className={`h-4 w-4 rounded-full bg-white transition ${
+                            group.isActive ? 'translate-x-4' : 'translate-x-0'
+                          }`} />
+                        </button>
+                        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-zinc-100">
+                          {group.name}
+                        </span>
+                        <span className="text-[10px] text-zinc-500">
+                          {group.friendEmails.length}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void deleteFriendGroup(group)}
+                          aria-label={`Delete ${group.name}`}
+                          title="Delete group"
+                          className="rounded p-1 text-zinc-500 transition hover:bg-rose-500/15 hover:text-rose-300"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <p className="mt-1.5 pl-11 text-[10px] text-zinc-500">
+                        {draggingFriendEmail
+                          ? `Drop to ${
+                              group.friendEmails.includes(draggingFriendEmail.toLowerCase())
+                                ? 'remove'
+                                : 'add'
+                            } ${draggingFriendEmail}`
+                          : 'Drag friend tiles here to add or remove'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="space-y-2">
                 {calendarsWithColors.map((cal: CalendarItemWithPalette) => (
                   <div
                     key={cal.id}
                     onClick={() => toggleCalendar(cal.id)}
+                    draggable={cal.type === 'outlook-friend'}
+                    onDragStart={(event) => {
+                      if (cal.type !== 'outlook-friend') return;
+                      event.dataTransfer.effectAllowed = 'copy';
+                      event.dataTransfer.setData('text/plain', cal.email);
+                      setDraggingFriendEmail(cal.email);
+                    }}
+                    onDragEnd={() => setDraggingFriendEmail(null)}
                     className={`group p-2.5 rounded-xl border transition cursor-pointer flex items-center justify-between gap-2.5 ${
                       cal.checked
                         ? 'bg-[#202020] border-[#343434]'
                         : 'bg-[#181818] border-[#242424] opacity-65 hover:opacity-100'
-                    }`}
+                    } ${cal.type === 'outlook-friend' ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                    title={cal.type === 'outlook-friend' ? 'Drag this friend to a group' : undefined}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       {/* Custom Rainbow Pastel Checkbox */}
