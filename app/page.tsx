@@ -511,6 +511,7 @@ export default function App() {
   // 1. Initialize empty states here
   const [calendars, setCalendars] = useState<CalendarItem[]>([]);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [loadedAccountEmail, setLoadedAccountEmail] = useState<string | null>(null);
   const [friendGroups, setFriendGroups] = useState<FriendGroup[]>([]);
   const [isCreatingFriendGroup, setIsCreatingFriendGroup] = useState(false);
   const [newFriendGroupName, setNewFriendGroupName] = useState('');
@@ -647,6 +648,7 @@ export default function App() {
 
   useEffect(() => {
     if (status !== 'authenticated' || !session?.user?.email) return;
+    const accountEmail = session.user.email;
     const controller = new AbortController();
 
     const loadAccountCalendars = async () => {
@@ -747,6 +749,8 @@ export default function App() {
     loadAccountCalendars().catch((error: unknown) => {
       if (controller.signal.aborted) return;
       showToast(error instanceof Error ? error.message : 'Could not load calendar data.');
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoadedAccountEmail(accountEmail);
     });
     return () => controller.abort();
   }, [session?.user?.email, session?.user?.name, status]);
@@ -1165,10 +1169,15 @@ export default function App() {
   // ============================================================================
   // LOGIN SCREEN (Zero-password One-Click Microsoft OAuth Onboarding)
   // ============================================================================
-  if (status === 'loading') {
+  const isLoadingAccountData =
+    isLoggedIn && loadedAccountEmail !== (session?.user?.email ?? null);
+  if (status === 'loading' || isLoadingAccountData) {
     return (
       <div className="min-h-screen bg-[#121212] flex items-center justify-center text-zinc-500 text-xs">
-        Checking your session...
+        <div className="flex flex-col items-center gap-4" role="status" aria-live="polite">
+          <span className="h-9 w-9 animate-spin rounded-full border-2 border-[#333] border-t-[#ff9f43]" />
+          <span>{status === 'loading' ? 'Checking your session…' : 'Loading your calendars and friends…'}</span>
+        </div>
       </div>
     );
   }
@@ -1213,6 +1222,12 @@ export default function App() {
                 <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
                   Google sign-in is not configured on this server. Add
                   GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, then restart or redeploy.
+                </p>
+              )}
+              {!authProviders.some((provider) => provider.id === 'azure-ad') && (
+                <p className="rounded-xl border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-sky-100">
+                  Microsoft sign-in is disabled until the server is configured with its specific
+                  Entra tenant ID. The broad “common” tenant is not accepted.
                 </p>
               )}
             </div>

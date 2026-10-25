@@ -24,7 +24,9 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 Configure NextAuth with `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, and the provider credentials
 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` and
-`AZURE_AD_CLIENT_ID` / `AZURE_AD_CLIENT_SECRET` (optionally `AZURE_AD_TENANT_ID`).
+`AZURE_AD_CLIENT_ID`, `AZURE_AD_CLIENT_SECRET`, and `AZURE_AD_TENANT_ID`. Microsoft sign-in is
+restricted to the configured Entra tenant: use its tenant GUID (not `common`, `organizations`,
+or `consumers`). Microsoft sign-in remains disabled until all three values are set.
 Set `DATABASE_URL` to the MongoDB connection string used by Prisma.
 After applying schema changes, run `npx prisma db push` from the app directory.
 
