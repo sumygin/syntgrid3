@@ -12,7 +12,6 @@ import {
   X,
   UserPlus,
   Upload,
-  Sparkles,
   Clock,
   MapPin,
   User,
@@ -518,7 +517,6 @@ export default function App() {
   const [uploadError, setUploadError] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Full-Stack Code & Architecture Drawer state
   const [isCodeModalOpen, setIsCodeModalOpen] = useState<boolean>(false);
   const [copiedSnippet, setCopiedSnippet] = useState<string>('');
 
@@ -757,24 +755,6 @@ export default function App() {
       }
     };
     reader.readAsText(file);
-  };
-
-  // One-click load sample Gemini photo extraction (e.g. Huxley 311 Room Schedule)
-  const loadSampleGeminiExtraction = () => {
-    setUploadError('');
-    setUploadedFileContent('');
-    setUploadedFileIsIcs(false);
-    if (!customCalName.trim()) {
-      setCustomCalName('Huxley 311 (Lecture Room)');
-    }
-    setUploadedEventsPreview([
-      { id: 'g1', dayIndex: 0, start: 10, end: 12, title: 'Huxley 311: Y2 Operating Systems', location: 'Huxley 311', lecturer: 'Room Occupied', category: 'Room Schedule' },
-      { id: 'g2', dayIndex: 0, start: 12, end: 14, title: 'Huxley 311: Y1 Functional Prog', location: 'Huxley 311', lecturer: 'Room Occupied', category: 'Room Schedule' },
-      { id: 'g3', dayIndex: 1, start: 14, end: 16, title: 'Huxley 311: Y3 Machine Learning', location: 'Huxley 311', lecturer: 'Room Occupied', category: 'Room Schedule' },
-      { id: 'g4', dayIndex: 2, start: 9, end: 11, title: 'Huxley 311: Y2 Compilers', location: 'Huxley 311', lecturer: 'Room Occupied', category: 'Room Schedule' },
-      { id: 'g5', dayIndex: 3, start: 14, end: 16, title: 'Huxley 311: Y1 Calculus', location: 'Huxley 311', lecturer: 'Room Occupied', category: 'Room Schedule' },
-      { id: 'g6', dayIndex: 4, start: 13, end: 14, title: 'Huxley 311: CO Career Talk', location: 'Huxley 311', lecturer: 'Room Occupied', category: 'Room Schedule' }
-    ]);
   };
 
   const handleSaveCustomCalendar = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -1070,14 +1050,6 @@ export default function App() {
             )}
           </div>
 
-          {/* Button to view the Free Hosting + OAuth Backend Code */}
-          <button
-            onClick={() => setIsCodeModalOpen(true)}
-            className="px-3 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-400/40 text-indigo-200 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
-          >
-            <Info className="w-3.5 h-3.5 text-indigo-300" />
-            <span className="hidden sm:inline">Calendar data &amp; privacy</span>
-          </button>
           <a
             href="/tutorial"
             className="px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-200 text-xs font-medium transition"
@@ -1696,14 +1668,6 @@ export default function App() {
                     <label className="text-xs font-semibold text-zinc-200">
                       Calendar File (`.ics` or `.json`)
                     </label>
-                    <button
-                      type="button"
-                      onClick={loadSampleGeminiExtraction}
-                      className="text-[11px] text-[#1dd1a1] hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <Sparkles className="w-3 h-3" />
-                      Load Sample &quot;Huxley 311&quot; File
-                    </button>
                   </div>
 
                   <input
