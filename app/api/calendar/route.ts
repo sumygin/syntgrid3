@@ -164,5 +164,5 @@ export async function PUT(request: Request) {
     },
   });
 
-  return NextResponse.json({ name: name.trim(), ics, events });
+  return NextResponse.json({ name: name.trim() });
 }

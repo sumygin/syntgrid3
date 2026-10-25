@@ -252,6 +252,33 @@ function layoutEventsInSubcolumn(events: CalendarEvent[]): PositionedEvent[] {
 
 type ImportedCalendarEvent = CalendarEvent & { weekOffset: number };
 
+async function readApiResponse<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  let data: unknown;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    const excerpt = text.slice(0, 200).replace(/\s+/g, ' ').trim();
+    throw new Error(
+      response.ok
+        ? `Server returned a non-JSON response (HTTP ${response.status}). ${excerpt}`
+        : `Request failed (HTTP ${response.status}); the server returned an invalid response. ${excerpt}`
+    );
+  }
+
+  if (!response.ok) {
+    const message =
+      data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
+        ? data.error
+        : `Request failed (HTTP ${response.status}).`;
+    throw new Error(message);
+  }
+  if (data === null) {
+    throw new Error(`Server returned an empty response (HTTP ${response.status}).`);
+  }
+  return data as T;
+}
+
 function parseCalendarFileContent(content: string, filename?: string): ImportedCalendarEvent[] {
   const text = content.replace(/^\uFEFF/, '').trim();
   const baseDay = Date.UTC(2026, 9, 19) / 86_400_000; // Monday of week 0
@@ -532,10 +559,7 @@ export default function App() {
     if (status !== 'unauthenticated') return;
     const controller = new AbortController();
     fetch('/api/auth/providers', { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('Could not check sign-in provider configuration.');
-        return response.json() as Promise<Record<string, { id: string; name: string }>>;
-      })
+      .then((response) => readApiResponse<Record<string, { id: string; name: string }>>(response))
       .then((providers) => setAuthProviders(Object.values(providers)))
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
@@ -553,8 +577,10 @@ export default function App() {
 
     const loadAccountCalendars = async () => {
       const ownResponse = await fetch('/api/calendar', { signal: controller.signal });
-      const ownData = await ownResponse.json();
-      if (!ownResponse.ok) throw new Error(ownData.error || 'Could not load your calendar.');
+      const ownData = await readApiResponse<{
+        name: string;
+        events: CalendarEvent[];
+      }>(ownResponse);
       const ownCalendar: CalendarItem = {
         id: 'cal-me',
         name: ownData.name,
@@ -566,8 +592,10 @@ export default function App() {
         events: ownData.events
       };
       const friendsResponse = await fetch('/api/friends', { signal: controller.signal });
-      const friendsData = await friendsResponse.json();
-      if (!friendsResponse.ok) throw new Error(friendsData.error || 'Could not load friends.');
+      const friendsData = await readApiResponse<{
+        requests: { id: string; email: string; name: string }[];
+        friends: { email: string; name: string }[];
+      }>(friendsResponse);
       const pendingRequests: FriendRequest[] = friendsData.requests.map(
         (request: { id: string; email: string; name: string }) => ({
           ...request,
@@ -581,8 +609,11 @@ export default function App() {
             `/api/calendar/shared/${encodeURIComponent(friend.email)}`,
             { signal: controller.signal }
           );
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || `Could not load ${friend.email}'s calendar.`);
+          const data = await readApiResponse<{
+            name: string;
+            email: string;
+            events: CalendarEvent[];
+          }>(response);
           return {
             id: `cal-friend-${friend.email}`,
             name: data.name,
@@ -643,8 +674,7 @@ export default function App() {
         const response = await fetch(`/api/friends/${encodeURIComponent(calendar.email)}`, {
           method: 'DELETE'
         });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Could not remove this friend.');
+        await readApiResponse<{ ok: boolean }>(response);
       } catch (error) {
         showToast(error instanceof Error ? error.message : 'Could not remove this friend.');
         return;
@@ -660,15 +690,15 @@ export default function App() {
       const response = await fetch(`/api/friends/${encodeURIComponent(req.email)}`, {
         method: 'PATCH'
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Could not accept this request.');
+      await readApiResponse<{ ok: boolean }>(response);
       const calendarResponse = await fetch(
         `/api/calendar/shared/${encodeURIComponent(req.email)}`
       );
-      const calendar = await calendarResponse.json();
-      if (!calendarResponse.ok) {
-        throw new Error(calendar.error || 'Could not load your friend’s calendar.');
-      }
+      const calendar = await readApiResponse<{
+        name: string;
+        email: string;
+        events: CalendarEvent[];
+      }>(calendarResponse);
       setFriendRequests((previous) => previous.filter((request) => request.id !== req.id));
       setCalendars((previous) => [
         ...previous,
@@ -695,8 +725,7 @@ export default function App() {
       const response = await fetch(`/api/friends/${encodeURIComponent(req.email)}`, {
         method: 'DELETE'
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Could not decline this request.');
+      await readApiResponse<{ ok: boolean }>(response);
       setFriendRequests((prev) => prev.filter((request) => request.id !== req.id));
       showToast(`Declined request from ${req.email}`);
     } catch (error) {
@@ -715,8 +744,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail })
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Could not send this request.');
+      await readApiResponse<{ ok: boolean }>(response);
       showToast(`Calendar share request sent to ${cleanEmail}.`);
       setFriendEmailInput('');
       setIsAddModalOpen(false);
@@ -775,17 +803,16 @@ export default function App() {
             }))
           })
         });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Could not save your calendar.');
+        await readApiResponse<{ name: string }>(response);
         const personalCalendar: CalendarItem = {
           id: 'cal-me',
-          name: result.name,
+          name: customCalName.trim(),
           email: session?.user?.email || '',
           type: 'outlook-me',
           checked: true,
           isDeletable: false,
           lastSynced: 'Saved personal .ics calendar',
-          events: result.events
+          events: uploadedEventsPreview
         };
         setCalendars((previous) => [
           personalCalendar,
@@ -852,11 +879,10 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: currentCalendar.name, ics, events })
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Could not save calendar edits.');
+      const result = await readApiResponse<{ name: string }>(response);
       setCalendars((previous) => previous.map((calendar) =>
         calendar.id === 'cal-me'
-          ? { ...calendar, name: result.name, events: result.events, lastSynced: 'Saved personal .ics calendar' }
+          ? { ...calendar, name: result.name, events, lastSynced: 'Saved personal .ics calendar' }
           : calendar
       ));
       setIsPersonalCalendarEditorOpen(false);
