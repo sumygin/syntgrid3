@@ -541,6 +541,7 @@ export default function App() {
   const [uploadedEventsPreview, setUploadedEventsPreview] = useState<CalendarEvent[] | null>(null);
   const [uploadedFileContent, setUploadedFileContent] = useState<string>('');
   const [uploadedFileIsIcs, setUploadedFileIsIcs] = useState(false);
+  const [uploadDestination, setUploadDestination] = useState<'personal' | 'extra'>('personal');
   const [uploadError, setUploadError] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -626,13 +627,30 @@ export default function App() {
           };
         })
       );
+      const extrasResponse = await fetch('/api/calendar/extra', { signal: controller.signal });
+      const extrasData = await readApiResponse<{
+        calendars: { id: string; name: string; events: CalendarEvent[] }[];
+      }>(extrasResponse);
+      const extraCalendars: CalendarItem[] = extrasData.calendars.map((calendar) => ({
+        id: calendar.id,
+        name: calendar.name,
+        email: 'Private extra calendar',
+        type: 'custom-file',
+        checked: true,
+        isDeletable: true,
+        lastSynced: 'Private to your account',
+        events: calendar.events
+      }));
 
       setFriendRequests(pendingRequests);
       setCalendars((previous) => [
         ownCalendar,
         ...previous.filter((calendar) =>
-          calendar.type !== 'outlook-me' && calendar.type !== 'outlook-friend'
+          calendar.type !== 'outlook-me' &&
+          calendar.type !== 'outlook-friend' &&
+          calendar.type !== 'custom-file'
         ),
+        ...extraCalendars,
         ...friendCalendars
       ]);
     };
@@ -677,6 +695,16 @@ export default function App() {
         await readApiResponse<{ ok: boolean }>(response);
       } catch (error) {
         showToast(error instanceof Error ? error.message : 'Could not remove this friend.');
+        return;
+      }
+    } else if (calendar.type === 'custom-file') {
+      try {
+        const response = await fetch(`/api/calendar/extra/${encodeURIComponent(calendar.id)}`, {
+          method: 'DELETE'
+        });
+        await readApiResponse<{ ok: boolean }>(response);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Could not delete this extra calendar.');
         return;
       }
     }
@@ -761,6 +789,7 @@ export default function App() {
     setUploadedEventsPreview(null);
     setUploadedFileContent('');
     setUploadedFileIsIcs(false);
+    setUploadDestination('personal');
     if (file.size > 1_000_000) {
       setUploadError('Calendar files must be smaller than 1 MB.');
       return;
@@ -777,7 +806,9 @@ export default function App() {
         const parsedEvents = parseCalendarFileContent(textContent, file.name);
         setUploadedEventsPreview(parsedEvents);
         setUploadedFileContent(textContent);
-        setUploadedFileIsIcs(/\.ics$/i.test(file.name));
+        const isIcs = /\.ics$/i.test(file.name);
+        setUploadedFileIsIcs(isIcs);
+        setUploadDestination(isIcs ? 'personal' : 'extra');
       } catch (err: unknown) {
         setUploadError(err instanceof Error ? err.message : 'Invalid calendar file format.');
       }
@@ -789,7 +820,7 @@ export default function App() {
     e.preventDefault();
     if (!customCalName.trim() || !uploadedEventsPreview) return;
 
-    if (uploadedFileIsIcs) {
+    if (uploadedFileIsIcs && uploadDestination === 'personal') {
       try {
         const response = await fetch('/api/calendar', {
           method: 'PUT',
@@ -822,6 +853,7 @@ export default function App() {
         setUploadedEventsPreview(null);
         setUploadedFileContent('');
         setUploadedFileIsIcs(false);
+        setUploadDestination('personal');
         setIsAddModalOpen(false);
         showToast(`Saved "${personalCalendar.name}" as your personal calendar.`);
       } catch (error) {
@@ -830,24 +862,41 @@ export default function App() {
       return;
     }
 
-    const newCal: CalendarItem = {
-      id: `cal-custom-${Date.now()}`,
-      name: customCalName.trim(),
-      email: `Uploaded File (${uploadedEventsPreview.length} events)`,
-      type: 'custom-file',
-      checked: true,
-      isDeletable: true,
-      lastSynced: 'Custom Timetable File',
-      events: uploadedEventsPreview
-    };
-
-    setCalendars((prev) => [...prev, newCal]);
-    setCustomCalName('');
-    setUploadedEventsPreview(null);
-    setUploadedFileContent('');
-    setUploadedFileIsIcs(false);
-    setIsAddModalOpen(false);
-    showToast(`Added "${newCal.name}" to your comparison checklist!`);
+    try {
+      const response = await fetch('/api/calendar/extra', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: customCalName.trim(),
+          events: uploadedEventsPreview.map((event) => ({
+            ...event,
+            weekOffset: event.weekOffset ?? 0
+          })),
+          ...(uploadedFileIsIcs ? { ics: uploadedFileContent } : {})
+        })
+      });
+      const savedCalendar = await readApiResponse<{ id: string; name: string }>(response);
+      const extraCalendar: CalendarItem = {
+        id: savedCalendar.id,
+        name: savedCalendar.name,
+        email: 'Private extra calendar',
+        type: 'custom-file',
+        checked: true,
+        isDeletable: true,
+        lastSynced: 'Private to your account',
+        events: uploadedEventsPreview
+      };
+      setCalendars((previous) => [...previous, extraCalendar]);
+      setCustomCalName('');
+      setUploadedEventsPreview(null);
+      setUploadedFileContent('');
+      setUploadedFileIsIcs(false);
+      setUploadDestination('personal');
+      setIsAddModalOpen(false);
+      showToast(`Added "${extraCalendar.name}" as a private extra calendar.`);
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Could not save your extra calendar.');
+    }
   };
 
   const updatePersonalEvent = (
@@ -1689,6 +1738,56 @@ export default function App() {
                   />
                 </div>
 
+                <fieldset>
+                  <legend className="block text-xs font-semibold text-zinc-200 mb-1.5">
+                    Add this upload as
+                  </legend>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className={`rounded-xl border p-3 text-xs transition ${
+                      uploadDestination === 'personal'
+                        ? 'border-[#ff9f43] bg-[#ff9f43]/10'
+                        : 'border-[#303030] bg-[#141414]'
+                    } ${uploadedEventsPreview && !uploadedFileIsIcs ? 'opacity-50' : 'cursor-pointer'}`}>
+                      <input
+                        type="radio"
+                        name="upload-destination"
+                        value="personal"
+                        checked={uploadDestination === 'personal'}
+                        disabled={Boolean(uploadedEventsPreview && !uploadedFileIsIcs)}
+                        onChange={() => setUploadDestination('personal')}
+                        className="sr-only"
+                      />
+                      <span className="font-semibold text-zinc-100">My Calendar</span>
+                      <span className="mt-1 block text-[11px] leading-relaxed text-zinc-400">
+                        Saved to your account and visible to accepted friends.
+                      </span>
+                      {uploadedEventsPreview && !uploadedFileIsIcs && (
+                        <span className="mt-1 block text-[10px] text-amber-300">
+                          Personal calendars require an .ics file.
+                        </span>
+                      )}
+                    </label>
+                    <label className={`rounded-xl border p-3 text-xs cursor-pointer transition ${
+                      uploadDestination === 'extra'
+                        ? 'border-[#1dd1a1] bg-[#1dd1a1]/10'
+                        : 'border-[#303030] bg-[#141414]'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="upload-destination"
+                        value="extra"
+                        checked={uploadDestination === 'extra'}
+                        onChange={() => setUploadDestination('extra')}
+                        className="sr-only"
+                      />
+                      <span className="font-semibold text-zinc-100">Extra calendar</span>
+                      <span className="mt-1 block text-[11px] leading-relaxed text-zinc-400">
+                        Private to you; it is never shared with friends.
+                      </span>
+                    </label>
+                  </div>
+                </fieldset>
+
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-semibold text-zinc-200">
@@ -1713,7 +1812,7 @@ export default function App() {
                       Click to upload your `.ics` or a `.json` room schedule
                     </p>
                     <p className="text-[11px] text-zinc-500 mt-0.5">
-                      An `.ics` replaces your personal calendar and is saved to your account. A `.json` adds a separate comparison calendar.
+                      Choose My Calendar to share an .ics with accepted friends, or Extra calendar to keep the upload private. JSON uploads are private extras.
                     </p>
                   </div>
                 </div>
@@ -1773,7 +1872,9 @@ export default function App() {
                     disabled={!uploadedEventsPreview || !customCalName.trim()}
                     className="px-4 py-2 rounded-xl bg-[#1dd1a1] disabled:opacity-40 hover:brightness-110 text-[#121212] text-xs font-bold cursor-pointer"
                   >
-                    {uploadedFileIsIcs ? 'Save as My Calendar' : 'Add Custom Timetable'}
+                    {uploadedFileIsIcs && uploadDestination === 'personal'
+                      ? 'Save as My Calendar'
+                      : 'Add Private Extra Calendar'}
                   </button>
                 </div>
               </form>

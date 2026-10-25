@@ -31,5 +31,6 @@ datasource db {
     ownerId    String   @db.ObjectId
     name       String
     eventsJson Json
+    sourceIcs  String?
     owner      User     @relation(fields: [ownerId], references: [id])
   }

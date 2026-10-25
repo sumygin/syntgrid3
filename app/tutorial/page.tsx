@@ -24,7 +24,7 @@ const steps = [
   {
     title: "Upload your Imperial .ics file",
     description:
-      "In the calendar workspace, choose Add Friend or Room Timetable → Upload Room / Custom File. Upload the .ics file, give it a name, then choose Save as My Calendar. The uploaded events are saved to your syntgrid account and replace the personal calendar currently linked to it."
+      "In the calendar workspace, choose Add Friend or Room Timetable → Upload Room / Custom File. Upload the .ics file, give it a name, then choose My Calendar if you want accepted friends to see it. This replaces the personal calendar currently linked to your account. Choose Extra calendar instead to keep that upload private to you."
   },
   {
     title: "Review and edit what you share",
@@ -74,8 +74,8 @@ export default function CalendarTutorialPage() {
         </ol>
 
         <div className="mt-6 rounded-xl border border-sky-400/20 bg-sky-400/5 p-4 text-xs leading-relaxed text-sky-100/80">
-          Syntgrid stores the uploaded calendar source and parsed events against your signed-in
-          account. Only accepted friends can retrieve the saved calendar through the app.
+          Syntgrid stores uploaded calendars against your signed-in account. Only your personal
+          calendar is available to accepted friends; extra calendars remain private to you.
         </div>
 
         <Link
