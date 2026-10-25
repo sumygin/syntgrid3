@@ -8,6 +8,20 @@ const MAX_ICS_LENGTH = 1_000_000;
 const MAX_EVENT_COUNT = 5_000;
 const MAX_EVENT_TEXT_LENGTH = 50_000;
 
+function getDatabaseFailureResponse(error: unknown, operation: "read" | "save") {
+  console.error(`[api/calendar] Failed to ${operation} calendar`, error);
+  const code =
+    error && typeof error === "object" && "code" in error && typeof error.code === "string"
+      ? error.code
+      : error instanceof Error
+        ? error.name
+        : "UnknownError";
+  return NextResponse.json(
+    { error: `Calendar storage failed (${code}). Check the server logs for details.` },
+    { status: 503 }
+  );
+}
+
 function isCalendarEvent(value: unknown): value is Prisma.InputJsonObject {
   if (!value || typeof value !== "object") return false;
   const event = value as Record<string, unknown>;
@@ -87,10 +101,15 @@ export async function GET() {
     return NextResponse.json({ error: "Sign in is required." }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: currentUser.email },
-    select: { calendarName: true, personalCalendarIcs: true, calendarEvents: true },
-  });
+  let user;
+  try {
+    user = await prisma.user.findUnique({
+      where: { email: currentUser.email },
+      select: { calendarName: true, personalCalendarIcs: true, calendarEvents: true },
+    });
+  } catch (error) {
+    return getDatabaseFailureResponse(error, "read");
+  }
 
   return NextResponse.json({
     name: user?.calendarName ?? `${currentUser.name} (Me)`,
@@ -147,22 +166,26 @@ export async function PUT(request: Request) {
     );
   }
 
-  await prisma.user.upsert({
-    where: { email: currentUser.email },
-    update: {
-      name: currentUser.name,
-      calendarName: name.trim(),
-      personalCalendarIcs: ics,
-      calendarEvents: events,
-    },
-    create: {
-      email: currentUser.email,
-      name: currentUser.name,
-      calendarName: name.trim(),
-      personalCalendarIcs: ics,
-      calendarEvents: events,
-    },
-  });
+  try {
+    await prisma.user.upsert({
+      where: { email: currentUser.email },
+      update: {
+        name: currentUser.name,
+        calendarName: name.trim(),
+        personalCalendarIcs: ics,
+        calendarEvents: events,
+      },
+      create: {
+        email: currentUser.email,
+        name: currentUser.name,
+        calendarName: name.trim(),
+        personalCalendarIcs: ics,
+        calendarEvents: events,
+      },
+    });
+  } catch (error) {
+    return getDatabaseFailureResponse(error, "save");
+  }
 
   return NextResponse.json({ name: name.trim() });
 }
