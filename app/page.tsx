@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession, signIn, signOut } from 'next-auth/react';
-import React, { startTransition, useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -510,23 +510,32 @@ export default function App() {
   const dateLabel = new Intl.DateTimeFormat('en-GB', {
     day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC'
   });
-  // 1. Define safe default states at the top of your App component:
-  const [todayWeekOffset, setTodayWeekOffset] = useState<number>(0);
-  const [todayDay, setTodayDay] = useState<number>(BASE_WEEK_START_UTC);
+  const [currentTime, setCurrentTime] = useState<Date | null>(null);
+  const todayDay = currentTime
+    ? Date.UTC(currentTime.getFullYear(), currentTime.getMonth(), currentTime.getDate())
+    : BASE_WEEK_START_UTC;
+  const todayWeekOffset = Math.floor((todayDay - BASE_WEEK_START_UTC) / (7 * 86_400_000));
+  const todayDayIndex = (new Date(todayDay).getUTCDay() + 6) % 7;
 
   useEffect(() => {
-    const londonToday = new Intl.DateTimeFormat('en-GB', {
-      year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Europe/London'
-    }).formatToParts(new Date());
-    const todayPart = (name: string) =>
-      Number(londonToday.find((part) => part.type === name)?.value);
-    const date = Date.UTC(todayPart('year'), todayPart('month') - 1, todayPart('day'));
-    const offset = Math.floor((date - BASE_WEEK_START_UTC) / (7 * 86_400_000));
-    startTransition(() => {
-      setTodayDay(date);
-      setTodayWeekOffset(offset);
-    });
+    const updateCurrentTime = () => setCurrentTime(new Date());
+    updateCurrentTime();
+    const intervalId = window.setInterval(updateCurrentTime, 30_000);
+    return () => window.clearInterval(intervalId);
   }, []);
+  const localTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const localTimeZoneAbbreviation = currentTime
+    ? new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' })
+        .formatToParts(currentTime)
+        .find((part) => part.type === 'timeZoneName')?.value ?? 'Local'
+    : 'Local';
+  const currentTimePosition = currentTime
+    ? (currentTime.getHours() + currentTime.getMinutes() / 60 + currentTime.getSeconds() / 3600) *
+      HOUR_HEIGHT
+    : null;
+  const currentTimeLabel = currentTime
+    ? `${new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(currentTime)} ${localTimeZoneAbbreviation}`
+    : null;
   // Hover tooltip state
   const [hoveredEvent, setHoveredEvent] = useState<HoveredEventInfo | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -1197,7 +1206,7 @@ export default function App() {
                 <div className="flex-1 grid grid-cols-7">
                   {DAYS_OF_WEEK.map((day: DayOfWeek) => {
                     const isCurrentDay = weekOffset === todayWeekOffset &&
-                      day.dayIndex === ((Math.floor(todayDay / 86_400_000) + 3) % 7);
+                      day.dayIndex === todayDayIndex;
                     return (
                     <div
                       key={day.dayIndex}
@@ -1408,6 +1417,25 @@ export default function App() {
                       )}
                     </div>
                   ))}
+                  {currentTimePosition !== null &&
+                    currentTimeLabel !== null &&
+                    weekOffset === todayWeekOffset &&
+                    currentTimePosition < HOURS.length * HOUR_HEIGHT && (
+                      <div
+                        aria-label={`Current local time in ${localTimeZone}: ${currentTimeLabel}`}
+                        className="absolute z-20 pointer-events-none"
+                        style={{
+                          top: `${currentTimePosition}px`,
+                          left: `${(todayDayIndex / DAYS_OF_WEEK.length) * 100}%`,
+                          width: `${100 / DAYS_OF_WEEK.length}%`
+                        }}
+                      >
+                        <div className="absolute left-0 right-0 border-t-2 border-rose-400" />
+                        <span className="absolute left-0 -top-2.5 rounded bg-rose-400 px-1 py-0.5 text-[9px] font-bold leading-none text-[#121212]">
+                          {currentTimeLabel}
+                        </span>
+                      </div>
+                    )}
                 </div>
               </div>
             </div>
