@@ -465,6 +465,8 @@ export default function App() {
   // Auth state
   const { data: session, status } = useSession();
   const isLoggedIn = status === 'authenticated';  
+  const [authProviders, setAuthProviders] = useState<{ id: string; name: string }[] | null>(null);
+  const [authProviderError, setAuthProviderError] = useState('');
 
   // 1. Initialize empty states here
   const [calendars, setCalendars] = useState<CalendarItem[]>([]);
@@ -527,6 +529,25 @@ export default function App() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
+
+  useEffect(() => {
+    if (status !== 'unauthenticated') return;
+    const controller = new AbortController();
+    fetch('/api/auth/providers', { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Could not check sign-in provider configuration.');
+        return response.json() as Promise<Record<string, { id: string; name: string }>>;
+      })
+      .then((providers) => setAuthProviders(Object.values(providers)))
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setAuthProviderError(
+            error instanceof Error ? error.message : 'Could not check sign-in provider configuration.'
+          );
+        }
+      });
+    return () => controller.abort();
+  }, [status]);
 
   useEffect(() => {
     if (status !== 'authenticated' || !session?.user?.email) return;
@@ -924,21 +945,43 @@ export default function App() {
               .ics file. Your sign-in account calendar is never imported.
             </p>
           </div>
-          <div className="space-y-3">
-            <button
-              onClick={() => signIn('google')}
-              className="w-full py-3 px-4 rounded-xl bg-white hover:bg-zinc-100 text-zinc-900 font-semibold text-sm flex items-center justify-center gap-3 transition shadow-lg cursor-pointer"
-            >
-              <span className="font-bold text-base text-blue-600">G</span>
-              Continue with Google
-            </button>
-            <button
-              onClick={() => signIn('azure-ad')}
-              className="w-full py-3 px-4 rounded-xl bg-[#242424] hover:bg-[#303030] border border-[#3a3a3a] text-white font-semibold text-sm flex items-center justify-center gap-3 transition cursor-pointer"
-            >
-              Continue with Microsoft
-            </button>
-          </div>
+          {authProviders ? (
+            <div className="space-y-3">
+              {authProviders.some((provider) => provider.id === 'google') && (
+                <button
+                  onClick={() => signIn('google')}
+                  className="w-full py-3 px-4 rounded-xl bg-white hover:bg-zinc-100 text-zinc-900 font-semibold text-sm flex items-center justify-center gap-3 transition shadow-lg cursor-pointer"
+                >
+                  <span className="font-bold text-base text-blue-600">G</span>
+                  Continue with Google
+                </button>
+              )}
+              {authProviders.some((provider) => provider.id === 'azure-ad') && (
+                <button
+                  onClick={() => signIn('azure-ad')}
+                  className="w-full py-3 px-4 rounded-xl bg-[#242424] hover:bg-[#303030] border border-[#3a3a3a] text-white font-semibold text-sm flex items-center justify-center gap-3 transition cursor-pointer"
+                >
+                  Continue with Microsoft
+                </button>
+              )}
+              {!authProviders.length && (
+                <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-200">
+                  No sign-in providers are configured. Add the provider credentials to the
+                  server environment and restart the app.
+                </p>
+              )}
+              {!authProviders.some((provider) => provider.id === 'google') && (
+                <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+                  Google sign-in is not configured on this server. Add
+                  GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, then restart or redeploy.
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="py-3 text-center text-xs text-zinc-400">
+              {authProviderError || 'Checking available sign-in options…'}
+            </p>
+          )}
           <a href="/tutorial" className="mt-5 block text-center text-xs text-sky-300 hover:underline">
             How to export and upload your Imperial calendar
           </a>

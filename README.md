@@ -28,6 +28,12 @@ Configure NextAuth with `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, and the provider cred
 Set `DATABASE_URL` to the MongoDB connection string used by Prisma.
 After applying schema changes, run `npx prisma db push` from the app directory.
 
+For local Google OAuth, set `NEXTAUTH_URL=http://localhost:3000` and add
+`http://localhost:3000/api/auth/callback/google` as an authorized redirect URI in the
+Google OAuth client. For a deployed app, set `NEXTAUTH_URL` to its public HTTPS origin and
+register `<NEXTAUTH_URL>/api/auth/callback/google` instead. Add both Google credentials to
+the server environment and restart/redeploy; Google sign-in is hidden until both are set.
+
 Google and Microsoft are used only to sign in. Users upload the specific Imperial Outlook
 `.ics` file they want to compare; syntgrid stores that file and its parsed events on their
 account. Calendar data is shared only with accepted friends. The in-app tutorial is at
