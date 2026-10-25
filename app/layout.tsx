@@ -2,8 +2,8 @@ import './globals.css';
 import Providers from './providers';
 
 export const metadata = {
-  title: 'SyncGrid | Real-Time Calendar Sync',
-  description: 'Sync and compare Outlook timetables side by side',
+  title: 'syntgrid | Compare your calendars',
+  description: 'Upload, edit, and compare personal timetable calendars',
 };
 
 export default function RootLayout({

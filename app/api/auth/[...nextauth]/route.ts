@@ -1,5 +1,6 @@
 import NextAuth, { NextAuthOptions } from "next-auth";
 import AzureADProvider from "next-auth/providers/azure-ad";
+import GoogleProvider from "next-auth/providers/google";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -9,26 +10,15 @@ export const authOptions: NextAuthOptions = {
       tenantId: process.env.AZURE_AD_TENANT_ID || "common",
       authorization: {
         params: {
-          scope: "openid profile email offline_access Calendars.Read",
+          scope: "openid profile email",
         },
       },
     }),
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    }),
   ],
-  callbacks: {
-    async jwt({ token, account }) {
-      // Store the Microsoft Graph access token and refresh token in the encrypted JWT
-      if (account) {
-        token.accessToken = account.access_token;
-        token.refreshToken = account.refresh_token;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      // Pass the access token to the client session so the frontend can read events
-      (session as any).accessToken = token.accessToken;
-      return session;
-    },
-  },
   secret: process.env.NEXTAUTH_SECRET,
 };
 

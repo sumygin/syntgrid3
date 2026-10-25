@@ -11,9 +11,10 @@ datasource db {
     id           String   @id @default(auto()) @map("_id") @db.ObjectId
     email        String   @unique
     name         String
-    refreshToken String?
-    fallbackIcs  String?
-    customCals   CustomCalendar[]
+    calendarName       String?
+    personalCalendarIcs String?
+    calendarEvents     Json?
+    customCals          CustomCalendar[]
   }
 
   model Friendship {
@@ -21,6 +22,8 @@ datasource db {
     senderId   String
     receiverId String
     status     String   @default("PENDING")
+
+    @@unique([senderId, receiverId])
   }
 
   model CustomCalendar {

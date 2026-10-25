@@ -20,6 +20,19 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Authentication and calendar setup
+
+Configure NextAuth with `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, and the provider credentials
+`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` and
+`AZURE_AD_CLIENT_ID` / `AZURE_AD_CLIENT_SECRET` (optionally `AZURE_AD_TENANT_ID`).
+Set `DATABASE_URL` to the MongoDB connection string used by Prisma.
+After applying schema changes, run `npx prisma db push` from the app directory.
+
+Google and Microsoft are used only to sign in. Users upload the specific Imperial Outlook
+`.ics` file they want to compare; syntgrid stores that file and its parsed events on their
+account. Calendar data is shared only with accepted friends. The in-app tutorial is at
+`/tutorial`.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

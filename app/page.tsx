@@ -1,10 +1,7 @@
 'use client';
 
 import { useSession, signIn, signOut } from 'next-auth/react';
-
-
-
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { startTransition, useState, useMemo, useRef, useEffect } from 'react';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -19,16 +16,14 @@ import {
   Clock,
   MapPin,
   User,
-  Code2,
   LogOut,
-  ShieldCheck,
   FileText,
   Columns,
   MoveHorizontal,
   Info,
   Copy,
   CheckCircle2,
-  Link2
+  Pencil
 } from 'lucide-react';
 
 // ============================================================================
@@ -171,9 +166,6 @@ const RAINBOW_PALETTE: Palette[] = [
 // ============================================================================
 // INITIAL PRE-LOADED CALENDARS (Matching your Imperial screenshot + Friends)
 // ============================================================================
-const INITIAL_CALENDARS: CalendarItem[] = [];
-const INITIAL_FRIEND_REQUESTS: FriendRequest[] = [];
-
 const DAYS_OF_WEEK: DayOfWeek[] = [
   { dayIndex: 0, num: 19, name: 'Monday', short: 'Mon' },
   { dayIndex: 1, num: 20, name: 'Tuesday', short: 'Tue' },
@@ -273,17 +265,30 @@ function parseCalendarFileContent(content: string, filename?: string): ImportedC
       parsed && typeof parsed === 'object' && 'events' in parsed
         ? (parsed as { events: unknown }).events : null;
     if (!Array.isArray(items)) throw new Error('JSON must be an array or an object with an events array.');
-    return items.map((item: any, index): ImportedCalendarEvent => ({
-      id: `${idPrefix}-${index}`,
-      dayIndex: Number(item.dayIndex ?? 0),
-      weekOffset: Number(item.weekOffset ?? 0),
-      start: Number(item.start ?? 10),
-      end: Number(item.end ?? 11),
-      title: item.title ?? 'Untitled Session',
-      location: item.location ?? 'Room TBD',
-      lecturer: item.lecturer ?? 'Uploaded Schedule',
-      category: item.category ?? 'Custom'
-    }));
+    return items.map((item: unknown, index): ImportedCalendarEvent => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        throw new Error('Each JSON event must be an object.');
+      }
+      const event = item as Record<string, unknown>;
+      const numberField = (key: string, fallback: number) => {
+        const value = Number(event[key] ?? fallback);
+        if (!Number.isFinite(value)) throw new Error(`Event ${key} must be a number.`);
+        return value;
+      };
+      const stringField = (key: string, fallback: string) =>
+        typeof event[key] === 'string' ? event[key] : fallback;
+      return {
+        id: `${idPrefix}-${index}`,
+        dayIndex: numberField('dayIndex', 0),
+        weekOffset: numberField('weekOffset', 0),
+        start: numberField('start', 10),
+        end: numberField('end', 11),
+        title: stringField('title', 'Untitled Session'),
+        location: stringField('location', 'Room TBD'),
+        lecturer: stringField('lecturer', 'Uploaded Schedule'),
+        category: stringField('category', 'Custom')
+      };
+    });
   }
 
   // RFC 5545: a space or tab at the start of a line continues the previous line.
@@ -392,39 +397,81 @@ function parseCalendarFileContent(content: string, filename?: string): ImportedC
   return events;
 }
 
+function escapeIcsText(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
+}
+
+function foldIcsLine(line: string): string {
+  const encoder = new TextEncoder();
+  const chunks: string[] = [];
+  let current = '';
+  let byteLength = 0;
+  for (const character of line) {
+    const characterLength = encoder.encode(character).length;
+    if (byteLength + characterLength > 75) {
+      chunks.push(current);
+      current = ` ${character}`;
+      byteLength = characterLength + 1;
+    } else {
+      current += character;
+      byteLength += characterLength;
+    }
+  }
+  chunks.push(current);
+  return chunks.join('\r\n');
+}
+
+function eventsToIcs(events: CalendarEvent[], calendarName: string): string {
+  const formatLocalDateTime = (dayTimestamp: number, hour: number) => {
+    const date = new Date(dayTimestamp + hour * 3_600_000);
+    return [
+      date.getUTCFullYear(),
+      String(date.getUTCMonth() + 1).padStart(2, '0'),
+      String(date.getUTCDate()).padStart(2, '0'),
+      'T',
+      String(date.getUTCHours()).padStart(2, '0'),
+      String(date.getUTCMinutes()).padStart(2, '0'),
+      '00'
+    ].join('');
+  };
+  const lines = events.flatMap((event, index) => {
+    const dayTimestamp =
+      BASE_WEEK_START_UTC +
+      ((event.weekOffset ?? 0) * 7 + event.dayIndex) * 86_400_000;
+    return [
+      'BEGIN:VEVENT',
+      `UID:${escapeIcsText(event.id || `syntgrid-${index}`)}@syntgrid`,
+      `DTSTART;TZID=Europe/London:${formatLocalDateTime(dayTimestamp, event.start)}`,
+      `DTEND;TZID=Europe/London:${formatLocalDateTime(dayTimestamp, event.end)}`,
+      `SUMMARY:${escapeIcsText(event.title)}`,
+      `LOCATION:${escapeIcsText(event.location)}`,
+      `DESCRIPTION:${escapeIcsText(event.lecturer)}`,
+      'END:VEVENT'
+    ];
+  });
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//syntgrid//Personal Calendar//EN',
+    `X-WR-CALNAME:${escapeIcsText(calendarName)}`,
+    ...lines,
+    'END:VCALENDAR',
+    ''
+  ].map(foldIcsLine).join('\r\n');
+}
+
 
 export default function App() {
   // Auth state
   const { data: session, status } = useSession();
   const isLoggedIn = status === 'authenticated';  
-  const [isSyncingOAuth, setIsSyncingOAuth] = useState<boolean>(false);
-
-  
 
   // 1. Initialize empty states here
   const [calendars, setCalendars] = useState<CalendarItem[]>([]);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
-
-  // 2. Paste the useEffect here right after your states
-  useEffect(() => {
-  if (session?.user) {
-    setCalendars((prev) => {
-      if (prev.some((c) => c.type === 'outlook-me')) return prev;
-
-      const userCal: CalendarItem = {
-        id: 'cal-me',
-        name: `${session.user?.name || 'My Calendar'} (Me)`, // Added ?. here
-        email: session.user?.email || '',                  // Added ?. here
-        type: 'outlook-me',
-        checked: true,
-        isDeletable: false,
-        lastSynced: 'Live via Microsoft Graph',
-        events: []
-      };
-      return [userCal, ...prev];
-    });
-  }
-}, [session]);
+  const [isPersonalCalendarEditorOpen, setIsPersonalCalendarEditorOpen] = useState(false);
+  const [editingPersonalEvents, setEditingPersonalEvents] = useState<CalendarEvent[]>([]);
+  const [isSavingPersonalCalendar, setIsSavingPersonalCalendar] = useState(false);
 
   // Rest of your state and handlers...
   // Week offset state
@@ -437,20 +484,20 @@ export default function App() {
   });
   // 1. Define safe default states at the top of your App component:
   const [todayWeekOffset, setTodayWeekOffset] = useState<number>(0);
-  const [todayDay, setTodayDay] = useState<number>(Date.UTC(2026, 9, 19));
+  const [todayDay, setTodayDay] = useState<number>(BASE_WEEK_START_UTC);
 
-  // 2. Compute the real date inside a useEffect (runs only on client mount):
   useEffect(() => {
     const londonToday = new Intl.DateTimeFormat('en-GB', {
       year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Europe/London'
     }).formatToParts(new Date());
-    const todayPart = (name: string) => Number(londonToday.find(p => p.type === name)?.value);
-    const tDay = Date.UTC(todayPart('year'), todayPart('month') - 1, todayPart('day'));
-    const tWeekOffset = Math.floor((tDay - BASE_WEEK_START_UTC) / (7 * 86_400_000));
-    
-    setTodayDay(tDay);
-    setTodayWeekOffset(tWeekOffset);
-
+    const todayPart = (name: string) =>
+      Number(londonToday.find((part) => part.type === name)?.value);
+    const date = Date.UTC(todayPart('year'), todayPart('month') - 1, todayPart('day'));
+    const offset = Math.floor((date - BASE_WEEK_START_UTC) / (7 * 86_400_000));
+    startTransition(() => {
+      setTodayDay(date);
+      setTodayWeekOffset(offset);
+    });
   }, []);
   // Hover tooltip state
   const [hoveredEvent, setHoveredEvent] = useState<HoveredEventInfo | null>(null);
@@ -460,12 +507,12 @@ export default function App() {
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [addModalTab, setAddModalTab] = useState<'friend' | 'custom'>('friend');
   const [friendEmailInput, setFriendEmailInput] = useState<string>('');
-  const [fallbackIcsInput, setFallbackIcsInput] = useState<string>('');
-  const [showFallbackIcs, setShowFallbackIcs] = useState<boolean>(false);
 
   // Custom Timetable Upload state
   const [customCalName, setCustomCalName] = useState<string>('');
   const [uploadedEventsPreview, setUploadedEventsPreview] = useState<CalendarEvent[] | null>(null);
+  const [uploadedFileContent, setUploadedFileContent] = useState<string>('');
+  const [uploadedFileIsIcs, setUploadedFileIsIcs] = useState(false);
   const [uploadError, setUploadError] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -480,6 +527,72 @@ export default function App() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
+
+  useEffect(() => {
+    if (status !== 'authenticated' || !session?.user?.email) return;
+    const controller = new AbortController();
+
+    const loadAccountCalendars = async () => {
+      const ownResponse = await fetch('/api/calendar', { signal: controller.signal });
+      const ownData = await ownResponse.json();
+      if (!ownResponse.ok) throw new Error(ownData.error || 'Could not load your calendar.');
+      const ownCalendar: CalendarItem = {
+        id: 'cal-me',
+        name: ownData.name,
+        email: session.user?.email || '',
+        type: 'outlook-me',
+        checked: true,
+        isDeletable: false,
+        lastSynced: ownData.events.length ? 'Saved personal .ics calendar' : 'Upload your Imperial .ics file',
+        events: ownData.events
+      };
+      const friendsResponse = await fetch('/api/friends', { signal: controller.signal });
+      const friendsData = await friendsResponse.json();
+      if (!friendsResponse.ok) throw new Error(friendsData.error || 'Could not load friends.');
+      const pendingRequests: FriendRequest[] = friendsData.requests.map(
+        (request: { id: string; email: string; name: string }) => ({
+          ...request,
+          timeAgo: 'Pending',
+          events: []
+        })
+      );
+      const friendCalendars = await Promise.all(
+        friendsData.friends.map(async (friend: { email: string; name: string }) => {
+          const response = await fetch(
+            `/api/calendar/shared/${encodeURIComponent(friend.email)}`,
+            { signal: controller.signal }
+          );
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || `Could not load ${friend.email}'s calendar.`);
+          return {
+            id: `cal-friend-${friend.email}`,
+            name: data.name,
+            email: friend.email,
+            type: 'outlook-friend' as const,
+            checked: true,
+            isDeletable: true,
+            lastSynced: 'Shared personal calendar',
+            events: data.events
+          };
+        })
+      );
+
+      setFriendRequests(pendingRequests);
+      setCalendars((previous) => [
+        ownCalendar,
+        ...previous.filter((calendar) =>
+          calendar.type !== 'outlook-me' && calendar.type !== 'outlook-friend'
+        ),
+        ...friendCalendars
+      ]);
+    };
+
+    loadAccountCalendars().catch((error: unknown) => {
+      if (controller.signal.aborted) return;
+      showToast(error instanceof Error ? error.message : 'Could not load calendar data.');
+    });
+    return () => controller.abort();
+  }, [session?.user?.email, status]);
 
   // Assign rainbow colors deterministically based on calendar order
   const calendarsWithColors: CalendarItemWithPalette[] = useMemo(() => {
@@ -505,72 +618,92 @@ export default function App() {
   };
 
   // Delete a friend/custom calendar
-  const deleteCalendar = (id: string, name: string) => {
-    setCalendars((prev) => prev.filter((c) => c.id !== id));
-    showToast(`Removed "${name}" from your calendars.`);
+  const deleteCalendar = async (calendar: CalendarItem) => {
+    if (calendar.type === 'outlook-friend') {
+      try {
+        const response = await fetch(`/api/friends/${encodeURIComponent(calendar.email)}`, {
+          method: 'DELETE'
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Could not remove this friend.');
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Could not remove this friend.');
+        return;
+      }
+    }
+    setCalendars((prev) => prev.filter((item) => item.id !== calendar.id));
+    showToast(`Removed "${calendar.name}" from your calendars.`);
   };
 
   // Accept incoming friend request
-  const acceptFriendRequest = (req: FriendRequest) => {
-    setFriendRequests((prev) => prev.filter((r) => r.id !== req.id));
-    const newCal: CalendarItem = {
-      id: `cal-friend-${Date.now()}`,
-      name: req.name,
-      email: req.email,
-      type: 'outlook-friend',
-      checked: true,
-      isDeletable: true,
-      lastSynced: 'Synced via Microsoft OAuth',
-      events: req.events
-    };
-    setCalendars((prev) => [...prev, newCal]);
-    showToast(`Accepted ${req.name}'s Outlook calendar! Compare mode updated.`);
+  const acceptFriendRequest = async (req: FriendRequest) => {
+    try {
+      const response = await fetch(`/api/friends/${encodeURIComponent(req.email)}`, {
+        method: 'PATCH'
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not accept this request.');
+      const calendarResponse = await fetch(
+        `/api/calendar/shared/${encodeURIComponent(req.email)}`
+      );
+      const calendar = await calendarResponse.json();
+      if (!calendarResponse.ok) {
+        throw new Error(calendar.error || 'Could not load your friend’s calendar.');
+      }
+      setFriendRequests((previous) => previous.filter((request) => request.id !== req.id));
+      setCalendars((previous) => [
+        ...previous,
+        {
+          id: `cal-friend-${req.email}`,
+          name: calendar.name,
+          email: req.email,
+          type: 'outlook-friend',
+          checked: true,
+          isDeletable: true,
+          lastSynced: 'Shared personal calendar',
+          events: calendar.events
+        }
+      ]);
+      showToast(`Accepted ${req.name}'s calendar share.`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not accept this request.');
+    }
   };
 
   // Decline incoming friend request
-  const declineFriendRequest = (req: FriendRequest) => {
-    setFriendRequests((prev) => prev.filter((r) => r.id !== req.id));
-    showToast(`Declined request from ${req.email}`);
+  const declineFriendRequest = async (req: FriendRequest) => {
+    try {
+      const response = await fetch(`/api/friends/${encodeURIComponent(req.email)}`, {
+        method: 'DELETE'
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not decline this request.');
+      setFriendRequests((prev) => prev.filter((request) => request.id !== req.id));
+      showToast(`Declined request from ${req.email}`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not decline this request.');
+    }
   };
 
-  // Handle sending a friend request or linking fallback ICS
-  const handleAddFriendSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  // Send a request to share personal calendars.
+  const handleAddFriendSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!friendEmailInput.trim()) return;
-
     const cleanEmail = friendEmailInput.trim().toLowerCase();
-    const displayName =
-      cleanEmail
-        .split('@')[0]
-        .replace(/[._0-9]/g, ' ')
-        .replace(/\b\w/g, (l) => l.toUpperCase())
-        .trim() || 'Imperial Friend';
-
-    if (showFallbackIcs && fallbackIcsInput.trim()) {
-      // Link immediately via live ICS feed
-      const newCal: CalendarItem = {
-        id: `cal-ics-${Date.now()}`,
-        name: `${displayName} (ICS Feed)`,
-        email: cleanEmail,
-        type: 'outlook-friend',
-        checked: true,
-        isDeletable: true,
-        lastSynced: 'Live .ICS Subscription',
-        events: [
-          { id: `f-${Date.now()}-1`, dayIndex: 0, start: 11, end: 13, title: 'COMP50001 - Algorithm Design', location: 'Huxley 311', lecturer: displayName, category: 'Lecture' },
-          { id: `f-${Date.now()}-2`, dayIndex: 2, start: 14, end: 16, title: 'COMP50002 - Software Eng', location: 'Huxley Lab', lecturer: displayName, category: 'Lab' },
-          { id: `f-${Date.now()}-3`, dayIndex: 4, start: 10, end: 12, title: 'COMP50008 - Probability', location: 'Huxley 340', lecturer: displayName, category: 'Lecture' }
-        ]
-      };
-      setCalendars((prev) => [...prev, newCal]);
-      showToast(`Linked ${displayName}'s live Outlook ICS feed!`);
-    } else {
-      showToast(`Friend request sent to ${cleanEmail}! (They'll see an Accept prompt in their sidebar)`);
+    try {
+      const response = await fetch('/api/friends', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not send this request.');
+      showToast(`Calendar share request sent to ${cleanEmail}.`);
+      setFriendEmailInput('');
+      setIsAddModalOpen(false);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not send this request.');
     }
-
-    setFriendEmailInput('');
-    setFallbackIcsInput('');
-    setIsAddModalOpen(false);
   };
 
   // Handle uploading .ics or .json file
@@ -578,6 +711,13 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadError('');
+    setUploadedEventsPreview(null);
+    setUploadedFileContent('');
+    setUploadedFileIsIcs(false);
+    if (file.size > 1_000_000) {
+      setUploadError('Calendar files must be smaller than 1 MB.');
+      return;
+    }
 
     if (!customCalName.trim()) {
       setCustomCalName(file.name.replace(/\.(ics|json)$/i, ''));
@@ -589,8 +729,10 @@ export default function App() {
         const textContent = (event.target?.result as string) || '';
         const parsedEvents = parseCalendarFileContent(textContent, file.name);
         setUploadedEventsPreview(parsedEvents);
-      } catch (err: any) {
-        setUploadError(err.message || 'Invalid calendar file format.');
+        setUploadedFileContent(textContent);
+        setUploadedFileIsIcs(/\.ics$/i.test(file.name));
+      } catch (err: unknown) {
+        setUploadError(err instanceof Error ? err.message : 'Invalid calendar file format.');
       }
     };
     reader.readAsText(file);
@@ -599,6 +741,8 @@ export default function App() {
   // One-click load sample Gemini photo extraction (e.g. Huxley 311 Room Schedule)
   const loadSampleGeminiExtraction = () => {
     setUploadError('');
+    setUploadedFileContent('');
+    setUploadedFileIsIcs(false);
     if (!customCalName.trim()) {
       setCustomCalName('Huxley 311 (Lecture Room)');
     }
@@ -612,9 +756,51 @@ export default function App() {
     ]);
   };
 
-  const handleSaveCustomCalendar = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSaveCustomCalendar = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!customCalName.trim() || !uploadedEventsPreview) return;
+
+    if (uploadedFileIsIcs) {
+      try {
+        const response = await fetch('/api/calendar', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: customCalName.trim(),
+            ics: uploadedFileContent,
+            events: uploadedEventsPreview.map((event) => ({
+              ...event,
+              weekOffset: event.weekOffset ?? 0
+            }))
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Could not save your calendar.');
+        const personalCalendar: CalendarItem = {
+          id: 'cal-me',
+          name: result.name,
+          email: session?.user?.email || '',
+          type: 'outlook-me',
+          checked: true,
+          isDeletable: false,
+          lastSynced: 'Saved personal .ics calendar',
+          events: result.events
+        };
+        setCalendars((previous) => [
+          personalCalendar,
+          ...previous.filter((calendar) => calendar.id !== 'cal-me')
+        ]);
+        setCustomCalName('');
+        setUploadedEventsPreview(null);
+        setUploadedFileContent('');
+        setUploadedFileIsIcs(false);
+        setIsAddModalOpen(false);
+        showToast(`Saved "${personalCalendar.name}" as your personal calendar.`);
+      } catch (error) {
+        setUploadError(error instanceof Error ? error.message : 'Could not save your calendar.');
+      }
+      return;
+    }
 
     const newCal: CalendarItem = {
       id: `cal-custom-${Date.now()}`,
@@ -630,8 +816,55 @@ export default function App() {
     setCalendars((prev) => [...prev, newCal]);
     setCustomCalName('');
     setUploadedEventsPreview(null);
+    setUploadedFileContent('');
+    setUploadedFileIsIcs(false);
     setIsAddModalOpen(false);
     showToast(`Added "${newCal.name}" to your comparison checklist!`);
+  };
+
+  const updatePersonalEvent = (
+    id: string,
+    field: 'dayIndex' | 'weekOffset' | 'start' | 'end' | 'title' | 'location' | 'lecturer',
+    value: string
+  ) => {
+    setEditingPersonalEvents((events) => events.map((event) => {
+      if (event.id !== id) return event;
+      if (field === 'dayIndex' || field === 'weekOffset' || field === 'start' || field === 'end') {
+        return { ...event, [field]: Number(value) };
+      }
+      return { ...event, [field]: value };
+    }));
+  };
+
+  const savePersonalCalendarEdits = async () => {
+    const currentCalendar = calendars.find((calendar) => calendar.id === 'cal-me');
+    if (!currentCalendar) return;
+    setIsSavingPersonalCalendar(true);
+    try {
+      const events = editingPersonalEvents.map((event) => ({
+        ...event,
+        weekOffset: event.weekOffset ?? 0
+      }));
+      const ics = eventsToIcs(events, currentCalendar.name);
+      const response = await fetch('/api/calendar', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: currentCalendar.name, ics, events })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not save calendar edits.');
+      setCalendars((previous) => previous.map((calendar) =>
+        calendar.id === 'cal-me'
+          ? { ...calendar, name: result.name, events: result.events, lastSynced: 'Saved personal .ics calendar' }
+          : calendar
+      ));
+      setIsPersonalCalendarEditorOpen(false);
+      showToast('Your calendar edits are saved and shared with accepted friends.');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not save calendar edits.');
+    } finally {
+      setIsSavingPersonalCalendar(false);
+    }
   };
 
   // Copy Gemini prompt helper with fallback for permissions policy
@@ -641,7 +874,7 @@ export default function App() {
       try {
         await navigator.clipboard.writeText(text);
         copied = true;
-      } catch (err) {
+      } catch {
         copied = false;
       }
     }
@@ -675,7 +908,7 @@ export default function App() {
   if (status === 'loading') {
     return (
       <div className="min-h-screen bg-[#121212] flex items-center justify-center text-zinc-500 text-xs">
-        Checking Microsoft session...
+        Checking your session...
       </div>
     );
   }
@@ -683,13 +916,33 @@ export default function App() {
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-[#121212] text-zinc-100 flex flex-col items-center justify-center p-4">
-        {/* ...your login card header... */}
-        <button
-          onClick={() => signIn('azure-ad')}
-          className="w-full py-3 px-4 rounded-xl bg-white hover:bg-zinc-100 text-zinc-900 font-semibold text-sm flex items-center justify-center gap-3 transition shadow-lg cursor-pointer"
-        >
-          Continue with Microsoft Outlook
-        </button>
+        <div className="w-full max-w-sm rounded-2xl border border-[#2e2e2e] bg-[#1a1a1a] p-6 shadow-2xl">
+          <div className="mb-5 text-center">
+            <h1 className="text-xl font-bold text-white">Welcome to syntgrid</h1>
+            <p className="mt-2 text-xs leading-relaxed text-zinc-400">
+              Sign in with Google or Microsoft, then upload your Imperial Outlook calendar as an
+              .ics file. Your sign-in account calendar is never imported.
+            </p>
+          </div>
+          <div className="space-y-3">
+            <button
+              onClick={() => signIn('google')}
+              className="w-full py-3 px-4 rounded-xl bg-white hover:bg-zinc-100 text-zinc-900 font-semibold text-sm flex items-center justify-center gap-3 transition shadow-lg cursor-pointer"
+            >
+              <span className="font-bold text-base text-blue-600">G</span>
+              Continue with Google
+            </button>
+            <button
+              onClick={() => signIn('azure-ad')}
+              className="w-full py-3 px-4 rounded-xl bg-[#242424] hover:bg-[#303030] border border-[#3a3a3a] text-white font-semibold text-sm flex items-center justify-center gap-3 transition cursor-pointer"
+            >
+              Continue with Microsoft
+            </button>
+          </div>
+          <a href="/tutorial" className="mt-5 block text-center text-xs text-sky-300 hover:underline">
+            How to export and upload your Imperial calendar
+          </a>
+        </div>
       </div>
     );
   }
@@ -775,14 +1028,20 @@ export default function App() {
             onClick={() => setIsCodeModalOpen(true)}
             className="px-3 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-400/40 text-indigo-200 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
           >
-            <Code2 className="w-3.5 h-3.5 text-indigo-300" />
-            <span className="hidden sm:inline">Vercel + OAuth Setup Code</span>
+            <Info className="w-3.5 h-3.5 text-indigo-300" />
+            <span className="hidden sm:inline">Calendar data &amp; privacy</span>
           </button>
+          <a
+            href="/tutorial"
+            className="px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-200 text-xs font-medium transition"
+          >
+            Calendar tutorial
+          </a>
 
-          {/* Logged-in Microsoft User Pill */}
+          {/* Logged-in account */}
           <div className="flex items-center gap-2 pl-2 border-l border-[#2a2a2a]">
             <div className="w-7 h-7 rounded-full bg-[#ff6b6b]/20 border border-[#ff6b6b] flex items-center justify-center text-xs font-bold text-[#ffd8d8]">
-              MS
+              {(session?.user?.name || session?.user?.email || 'U').slice(0, 1).toUpperCase()}
             </div>
             <div className="hidden lg:block text-left">
               <div className="text-xs font-medium text-zinc-200 leading-none">
@@ -795,7 +1054,7 @@ export default function App() {
             <button
               onClick={() => signOut()}
               className="p-1.5 rounded-md hover:bg-[#262626] text-zinc-400 hover:text-zinc-200 transition cursor-pointer"
-              title="Test Microsoft Login Screen"
+              title="Sign out"
             >
               <LogOut className="w-3.5 h-3.5" />
             </button>
@@ -1167,7 +1426,7 @@ export default function App() {
                             }}
                           >
                             {cal.type === 'outlook-me'
-                              ? 'My Outlook'
+                              ? 'My Calendar'
                               : cal.type === 'outlook-friend'
                               ? 'Friend OAuth'
                               : 'Room / File'}
@@ -1177,12 +1436,26 @@ export default function App() {
                       </div>
                     </div>
 
+                    {cal.type === 'outlook-me' && (
+                      <button
+                        onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+                          e.stopPropagation();
+                          setEditingPersonalEvents(cal.events.map((event) => ({ ...event })));
+                          setIsPersonalCalendarEditorOpen(true);
+                        }}
+                        className="p-1.5 rounded-lg opacity-60 group-hover:opacity-100 hover:bg-sky-500/20 text-zinc-400 hover:text-sky-200 transition cursor-pointer shrink-0"
+                        title="Edit your personal calendar"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
                     {/* Delete / Remove Button */}
                     {cal.isDeletable && (
                       <button
                         onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                           e.stopPropagation();
-                          deleteCalendar(cal.id, cal.name);
+                          void deleteCalendar(cal);
                         }}
                         className="p-1.5 rounded-lg opacity-60 group-hover:opacity-100 hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 transition cursor-pointer shrink-0"
                         title="Remove calendar"
@@ -1271,7 +1544,7 @@ export default function App() {
       )}
 
       {/* ====================================================================
-          UNIFIED "+ ADD" MODAL (Tab 1: Add Friend | Tab 2: Upload Custom File)
+          UNIFIED "+ ADD" MODAL (friend requests and custom calendars)
          ==================================================================== */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1314,12 +1587,12 @@ export default function App() {
               </button>
             </div>
 
-            {/* TAB 1: ADD FRIEND VIA OUTLOOK EMAIL */}
+            {/* TAB 1: ADD FRIEND VIA EMAIL */}
             {addModalTab === 'friend' ? (
               <form onSubmit={handleAddFriendSubmit} className="p-5 space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-zinc-200 mb-1.5">
-                    Friend's University Outlook Email
+                    Friend&apos;s account email
                   </label>
                   <input
                     type="email"
@@ -1330,33 +1603,8 @@ export default function App() {
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#121212] border border-[#303030] focus:border-[#ff9f43] focus:outline-none text-xs text-white"
                   />
                   <p className="text-[11px] text-zinc-400 mt-1.5">
-                    They'll receive an <strong>Accept / Decline</strong> prompt in their right sidebar. Once accepted, their live Microsoft OAuth calendar appears in your checklist.
+                    They will receive an <strong>Accept / Decline</strong> prompt. Once accepted, their saved personal .ics calendar appears in your comparison.
                   </p>
-                </div>
-
-                <div className="pt-2 border-t border-[#262626]">
-                  <button
-                    type="button"
-                    onClick={() => setShowFallbackIcs(!showFallbackIcs)}
-                    className="text-[11px] text-[#54a0ff] hover:underline flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Link2 className="w-3.5 h-3.5" />
-                    {showFallbackIcs
-                      ? 'Hide fallback Outlook .ICS URL'
-                      : 'University IT blocked OAuth? Paste their live Outlook .ICS URL instead'}
-                  </button>
-
-                  {showFallbackIcs && (
-                    <div className="mt-2.5">
-                      <input
-                        type="url"
-                        value={fallbackIcsInput}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFallbackIcsInput(e.target.value)}
-                        placeholder="https://outlook.office365.com/owa/calendar/.../reachcalendar.ics"
-                        className="w-full px-3 py-2 rounded-xl bg-[#121212] border border-[#303030] text-xs text-white"
-                      />
-                    </div>
-                  )}
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2">
@@ -1371,7 +1619,7 @@ export default function App() {
                     type="submit"
                     className="px-4 py-2 rounded-xl bg-[#ff9f43] hover:brightness-110 text-[#121212] text-xs font-bold cursor-pointer"
                   >
-                    {showFallbackIcs && fallbackIcsInput ? 'Link Live ICS Now' : 'Send Friend Request'}
+                    Send Calendar Request
                   </button>
                 </div>
               </form>
@@ -1380,7 +1628,7 @@ export default function App() {
               <form onSubmit={handleSaveCustomCalendar} className="p-5 space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-zinc-200 mb-1.5">
-                    Custom Calendar / Room Name
+                    Calendar Name
                   </label>
                   <input
                     type="text"
@@ -1395,7 +1643,7 @@ export default function App() {
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-semibold text-zinc-200">
-                      Calendar File (`.json` or `.ics`)
+                      Calendar File (`.ics` or `.json`)
                     </label>
                     <button
                       type="button"
@@ -1403,7 +1651,7 @@ export default function App() {
                       className="text-[11px] text-[#1dd1a1] hover:underline flex items-center gap-1 cursor-pointer"
                     >
                       <Sparkles className="w-3 h-3" />
-                      Load Sample "Huxley 311" File
+                      Load Sample &quot;Huxley 311&quot; File
                     </button>
                   </div>
 
@@ -1421,17 +1669,25 @@ export default function App() {
                   >
                     <FileText className="w-6 h-6 text-zinc-400 mx-auto mb-1.5" />
                     <p className="text-xs text-zinc-200 font-medium">
-                      Click to upload `.json` or `.ics` file
+                      Click to upload your `.ics` or a `.json` room schedule
                     </p>
                     <p className="text-[11px] text-zinc-500 mt-0.5">
-                      Send a photo of any room schedule to Gemini and upload the file it generates
+                      An `.ics` replaces your personal calendar and is saved to your account. A `.json` adds a separate comparison calendar.
                     </p>
                   </div>
                 </div>
 
+                <p className="text-[11px] text-zinc-400">
+                  Need to export your timetable first?{' '}
+                  <a href="/tutorial" className="text-sky-300 hover:underline">
+                    Follow the Imperial Outlook tutorial
+                  </a>
+                  . Your Google or Microsoft account calendar is not imported.
+                </p>
+
                 <div className="p-3 rounded-xl bg-[#141414] border border-[#262626] flex items-center justify-between gap-2">
                   <div className="text-[11px] text-zinc-400">
-                    <strong className="text-zinc-200">Tip:</strong> Copy the prompt to give Gemini with your timetable photo so it outputs syntgrid's JSON format.
+                    <strong className="text-zinc-200">Tip:</strong> Copy the prompt to give Gemini with your timetable photo so it outputs syntgrid&apos;s JSON format.
                   </div>
                   <button
                     type="button"
@@ -1457,7 +1713,7 @@ export default function App() {
                 {uploadedEventsPreview && (
                   <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-200 flex items-center justify-between">
                     <span>
-                      Ready to import <strong>{uploadedEventsPreview.length} events</strong> into "{customCalName || 'Custom Schedule'}"
+                      Ready to import <strong>{uploadedEventsPreview.length} events</strong> into &quot;{customCalName || 'Custom Schedule'}&quot;
                     </span>
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   </div>
@@ -1476,11 +1732,150 @@ export default function App() {
                     disabled={!uploadedEventsPreview || !customCalName.trim()}
                     className="px-4 py-2 rounded-xl bg-[#1dd1a1] disabled:opacity-40 hover:brightness-110 text-[#121212] text-xs font-bold cursor-pointer"
                   >
-                    Add Custom Timetable
+                    {uploadedFileIsIcs ? 'Save as My Calendar' : 'Add Custom Timetable'}
                   </button>
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {isPersonalCalendarEditorOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl max-h-[90vh] bg-[#1a1a1a] border border-[#2e2e2e] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-[#282828] flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-white">Edit your personal calendar</h3>
+                <p className="mt-1 text-[11px] text-zinc-400">
+                  Changes are saved to your account and visible to accepted friends.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsPersonalCalendarEditorOpen(false)}
+                className="p-1 rounded-lg hover:bg-[#262626] text-zinc-400 hover:text-white cursor-pointer"
+                title="Close editor"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-5 space-y-3">
+              {editingPersonalEvents.length === 0 && (
+                <p className="rounded-xl border border-[#2e2e2e] bg-[#141414] p-4 text-xs text-zinc-400">
+                  This calendar has no events. Add an event below, or upload an Imperial Outlook .ics file.
+                </p>
+              )}
+              {editingPersonalEvents.map((event) => (
+                <div key={event.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 rounded-xl border border-[#2c2c2c] bg-[#151515] p-3">
+                  <input
+                    aria-label="Event title"
+                    value={event.title}
+                    onChange={(e) => updatePersonalEvent(event.id, 'title', e.target.value)}
+                    placeholder="Event title"
+                    className="md:col-span-3 rounded-lg border border-[#303030] bg-[#101010] px-2.5 py-2 text-xs text-white"
+                  />
+                  <input
+                    aria-label="Location"
+                    value={event.location}
+                    onChange={(e) => updatePersonalEvent(event.id, 'location', e.target.value)}
+                    placeholder="Location"
+                    className="md:col-span-2 rounded-lg border border-[#303030] bg-[#101010] px-2.5 py-2 text-xs text-white"
+                  />
+                  <input
+                    aria-label="Lecturer or details"
+                    value={event.lecturer}
+                    onChange={(e) => updatePersonalEvent(event.id, 'lecturer', e.target.value)}
+                    placeholder="Lecturer / details"
+                    className="md:col-span-2 rounded-lg border border-[#303030] bg-[#101010] px-2.5 py-2 text-xs text-white"
+                  />
+                  <select
+                    aria-label="Day of week"
+                    value={event.dayIndex}
+                    onChange={(e) => updatePersonalEvent(event.id, 'dayIndex', e.target.value)}
+                    className="md:col-span-1 rounded-lg border border-[#303030] bg-[#101010] px-2 py-2 text-xs text-white"
+                  >
+                    {DAYS_OF_WEEK.map((day) => (
+                      <option key={day.dayIndex} value={day.dayIndex}>{day.short}</option>
+                    ))}
+                  </select>
+                  <input
+                    aria-label="Week offset"
+                    type="number"
+                    value={event.weekOffset ?? 0}
+                    onChange={(e) => updatePersonalEvent(event.id, 'weekOffset', e.target.value)}
+                    title="Weeks from the calendar's starting week"
+                    className="md:col-span-1 rounded-lg border border-[#303030] bg-[#101010] px-2 py-2 text-xs text-white"
+                  />
+                  <input
+                    aria-label="Start time"
+                    type="number"
+                    min="0"
+                    max="23.75"
+                    step="0.25"
+                    value={event.start}
+                    onChange={(e) => updatePersonalEvent(event.id, 'start', e.target.value)}
+                    className="md:col-span-1 rounded-lg border border-[#303030] bg-[#101010] px-2 py-2 text-xs text-white"
+                  />
+                  <input
+                    aria-label="End time"
+                    type="number"
+                    min="0.25"
+                    max="24"
+                    step="0.25"
+                    value={event.end}
+                    onChange={(e) => updatePersonalEvent(event.id, 'end', e.target.value)}
+                    className="md:col-span-1 rounded-lg border border-[#303030] bg-[#101010] px-2 py-2 text-xs text-white"
+                  />
+                  <button
+                    onClick={() => setEditingPersonalEvents((events) => events.filter((item) => item.id !== event.id))}
+                    className="md:col-span-1 flex items-center justify-center rounded-lg bg-rose-500/10 text-rose-300 hover:bg-rose-500/20"
+                    title="Delete event"
+                    type="button"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap justify-between gap-2 border-t border-[#282828] p-4">
+              <button
+                type="button"
+                onClick={() => setEditingPersonalEvents((events) => [
+                  ...events,
+                  {
+                    id: `manual-${Date.now()}`,
+                    dayIndex: 0,
+                    weekOffset: 0,
+                    start: 9,
+                    end: 10,
+                    title: 'New event',
+                    location: 'Room TBD',
+                    lecturer: '',
+                    category: 'Personal'
+                  }
+                ])}
+                className="rounded-xl bg-[#242424] px-4 py-2 text-xs font-medium text-zinc-200 hover:bg-[#2e2e2e]"
+              >
+                Add event
+              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsPersonalCalendarEditorOpen(false)}
+                  className="rounded-xl bg-[#242424] px-4 py-2 text-xs font-medium text-zinc-300 hover:bg-[#2e2e2e]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingPersonalCalendar}
+                  onClick={() => void savePersonalCalendarEdits()}
+                  className="rounded-xl bg-emerald-400 px-4 py-2 text-xs font-bold text-[#121212] hover:brightness-110 disabled:opacity-50"
+                >
+                  {isSavingPersonalCalendar ? 'Saving…' : 'Save calendar'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1494,10 +1889,10 @@ export default function App() {
             <div className="px-6 py-4 border-b border-[#282828] flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-white">
-                  Free Student Hosting Stack: Vercel + NextAuth (Microsoft OAuth) + Prisma
+                  Authentication and saved calendar data
                 </h3>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Zero cold-starts, $0/month, and stores only minimal friend links & custom room JSONs.
+                  Google and Microsoft are sign-in providers; calendar access is based on your uploaded .ics file.
                 </p>
               </div>
               <button
@@ -1513,19 +1908,19 @@ export default function App() {
                 <div className="p-3.5 rounded-xl bg-[#1f1f1f] border border-[#2c2c2c]">
                   <div className="font-bold text-white mb-1">1. Host: Vercel (Free)</div>
                   <p className="text-[11px] text-zinc-400">
-                    Unlike Render's free tier (which sleeps after 15m and takes 40s to wake up), Vercel wakes instantly and hosts Next.js API routes for free.
+                    Unlike Render&apos;s free tier (which sleeps after 15m and takes 40s to wake up), Vercel wakes instantly and hosts Next.js API routes for free.
                   </p>
                 </div>
                 <div className="p-3.5 rounded-xl bg-[#1f1f1f] border border-[#2c2c2c]">
-                  <div className="font-bold text-white mb-1">2. DB: Supabase or MongoDB</div>
+                  <div className="font-bold text-white mb-1">2. DB: MongoDB</div>
                   <p className="text-[11px] text-zinc-400">
-                    Never use plain local SQLite on free cloud hosts (ephemeral disk wipes on restart). Use free <strong>Supabase Postgres</strong> or <strong>MongoDB Atlas M0</strong>.
+                    The uploaded calendar source and normalized editable events are stored on the signed-in user record.
                   </p>
                 </div>
                 <div className="p-3.5 rounded-xl bg-[#1f1f1f] border border-[#2c2c2c]">
-                  <div className="font-bold text-white mb-1">3. Auth: Microsoft Entra</div>
+                  <div className="font-bold text-white mb-1">3. Auth: NextAuth</div>
                   <p className="text-[11px] text-zinc-400">
-                    Uses NextAuth.js with <code>Calendars.Read</code> + <code>offline_access</code> to fetch live Outlook events on the fly without storing timetables.
+                    Google and Microsoft OAuth identify the account only. No calendar permissions or live Graph sync are requested.
                   </p>
                 </div>
               </div>
@@ -1538,28 +1933,16 @@ export default function App() {
                 </div>
                 <pre className="p-3.5 rounded-xl bg-[#111111] border border-[#282828] overflow-x-auto text-[11px] text-emerald-300 font-mono leading-relaxed">
 {`model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String
-  refreshToken String?  // Encrypted Microsoft OAuth refresh token for live Graph fetches
-  fallbackIcs  String?  // Optional published Outlook .ics URL if Uni IT blocks Graph API
-  customCals   CustomCalendar[]
+  email               String @unique
+  calendarName        String?
+  personalCalendarIcs String?
+  calendarEvents      Json?
 }
 
 model Friendship {
-  id         String   @id @default(cuid())
   senderId   String
   receiverId String
-  status     String   @default("PENDING") // "PENDING" | "ACCEPTED"
-  @@unique([senderId, receiverId])
-}
-
-model CustomCalendar {
-  id         String   @id @default(cuid())
-  ownerId    String
-  name       String   // e.g. "Huxley 308"
-  eventsJson Json     // Normalized [{ dayIndex, start, end, title, location }]
-  owner      User     @relation(fields: [ownerId], references: [id])
+  status     String @default("PENDING")
 }`}
                 </pre>
               </div>
@@ -1567,10 +1950,15 @@ model CustomCalendar {
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="font-bold text-zinc-100">
-                    2. Microsoft OAuth + Live Graph Timetable Fetch (<code>app/api/calendar/[friendId]/route.ts</code>)
+                    2. Calendar API and sharing permissions
                   </span>
                 </div>
-                <pre className="p-3.5 rounded-xl bg-[#111111] border border-[#282828] overflow-x-auto text-[11px] text-sky-300 font-mono leading-relaxed">
+                <p className="rounded-xl border border-[#282828] bg-[#111111] p-3.5 text-[11px] leading-relaxed text-zinc-300">
+                  The calendar API saves the uploaded .ics source and event data to your account.
+                  Shared-calendar reads require an accepted friendship; provider calendar APIs are
+                  not called.
+                </p>
+                <pre hidden className="p-3.5 rounded-xl bg-[#111111] border border-[#282828] overflow-x-auto text-[11px] text-sky-300 font-mono leading-relaxed">
 {`]// Configure NextAuth with Microsoft Entra ID:
 // scope: "openid profile email"
 
