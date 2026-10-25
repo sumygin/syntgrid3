@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useSession, signIn, signOut } from 'next-auth/react';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
@@ -19,7 +20,6 @@ import {
   FileText,
   Columns,
   MoveHorizontal,
-  Info,
   Copy,
   CheckCircle2,
   Pencil
@@ -60,6 +60,7 @@ export interface Palette {
 export interface CalendarItem {
   id: string;
   name: string;
+  ownerName?: string;
   email: string;
   type: 'outlook-me' | 'outlook-friend' | 'custom-file';
   checked: boolean;
@@ -589,11 +590,13 @@ export default function App() {
       const ownResponse = await fetch('/api/calendar', { signal: controller.signal });
       const ownData = await readApiResponse<{
         name: string;
+        ownerName: string;
         events: CalendarEvent[];
       }>(ownResponse);
       const ownCalendar: CalendarItem = {
         id: 'cal-me',
         name: ownData.name,
+        ownerName: ownData.ownerName,
         email: session.user?.email || '',
         type: 'outlook-me',
         checked: true,
@@ -621,12 +624,14 @@ export default function App() {
           );
           const data = await readApiResponse<{
             name: string;
+            ownerName: string;
             email: string;
             events: CalendarEvent[];
           }>(response);
           return {
             id: `cal-friend-${friend.email}`,
             name: data.name,
+            ownerName: data.ownerName,
             email: friend.email,
             type: 'outlook-friend' as const,
             checked: true,
@@ -643,6 +648,7 @@ export default function App() {
       const extraCalendars: CalendarItem[] = extrasData.calendars.map((calendar) => ({
         id: calendar.id,
         name: calendar.name,
+        ownerName: session.user?.name || session.user?.email || undefined,
         email: 'Private extra calendar',
         type: 'custom-file',
         checked: true,
@@ -669,7 +675,7 @@ export default function App() {
       showToast(error instanceof Error ? error.message : 'Could not load calendar data.');
     });
     return () => controller.abort();
-  }, [session?.user?.email, status]);
+  }, [session?.user?.email, session?.user?.name, status]);
 
   // Assign rainbow colors deterministically based on calendar order
   const calendarsWithColors: CalendarItemWithPalette[] = useMemo(() => {
@@ -685,7 +691,7 @@ export default function App() {
   }, [calendarsWithColors]);
 
   // Horizontal scroll rule: active when > 2 calendars are checked
-  const isHorizontalScrollMode = activeCalendars.length > 2;
+  const isHorizontalScrollMode = activeCalendars.length > 1;
 
   // Toggle a calendar checkbox
   const toggleCalendar = (id: string) => {
@@ -733,6 +739,7 @@ export default function App() {
       );
       const calendar = await readApiResponse<{
         name: string;
+        ownerName: string;
         email: string;
         events: CalendarEvent[];
       }>(calendarResponse);
@@ -742,6 +749,7 @@ export default function App() {
         {
           id: `cal-friend-${req.email}`,
           name: calendar.name,
+          ownerName: calendar.ownerName,
           email: req.email,
           type: 'outlook-friend',
           checked: true,
@@ -847,6 +855,7 @@ export default function App() {
         const personalCalendar: CalendarItem = {
           id: 'cal-me',
           name: customCalName.trim(),
+          ownerName: session?.user?.name || session?.user?.email || undefined,
           email: session?.user?.email || '',
           type: 'outlook-me',
           checked: true,
@@ -888,6 +897,7 @@ export default function App() {
       const extraCalendar: CalendarItem = {
         id: savedCalendar.id,
         name: savedCalendar.name,
+        ownerName: session?.user?.name || session?.user?.email || undefined,
         email: 'Private extra calendar',
         type: 'custom-file',
         checked: true,
@@ -1069,11 +1079,13 @@ export default function App() {
         {/* Left: Brand + Week Navigation */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2.5 pr-3 border-r border-[#2a2a2a]">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#ff6b6b] via-[#ff9f43] to-[#54a0ff] p-[1px]">
-              <div className="w-full h-full bg-[#141414] rounded-[7px] flex items-center justify-center">
-                <CalendarIcon className="w-4 h-4 text-[#ff6b6b]" />
-              </div>
-            </div>
+            <Image
+              src="/syntgrid-icon.png"
+              alt=""
+              width={32}
+              height={32}
+              className="h-8 w-8 rounded-lg object-cover"
+            />
             <span className="font-bold tracking-tight text-sm text-white hidden sm:inline">
               syntgrid
             </span>
@@ -1120,7 +1132,7 @@ export default function App() {
                 <MoveHorizontal className="w-3.5 h-3.5 text-[#feca57]" />
                 <span>
                   Comparing <strong>{activeCalendars.length}</strong> calendars •{' '}
-                  <span className="text-[#feca57]">Horizontal Scroll Active</span>
+                  <span className="text-[#feca57]">Side-by-side view active</span>
                 </span>
               </>
             ) : (
@@ -1128,7 +1140,7 @@ export default function App() {
                 <Columns className="w-3.5 h-3.5 text-[#ff9f43]" />
                 <span>
                   Comparing <strong>{activeCalendars.length}</strong>{' '}
-                  {activeCalendars.length === 1 ? 'calendar' : 'calendars side-by-side'}
+                  {activeCalendars.length === 1 ? 'calendar' : 'calendars'}
                 </span>
               </>
             )}
@@ -1272,7 +1284,7 @@ export default function App() {
                                 className="w-1.5 h-1.5 rounded-full shrink-0"
                                 style={{ backgroundColor: cal.palette.hex }}
                               />
-                              <span className="truncate">{cal.name.split(' ')[0]}</span>
+                              <span className="truncate">{cal.ownerName || cal.name}</span>
                             </div>
                           ))}
                         </div>
@@ -1358,7 +1370,7 @@ export default function App() {
                                       });
                                       setHoveredEvent({
                                         ...ev,
-                                        ownerName: cal.name,
+                                        ownerName: cal.ownerName || cal.name,
                                         ownerEmail: cal.email,
                                         palette: cal.palette
                                       });
@@ -1543,6 +1555,11 @@ export default function App() {
                             {cal.name}
                           </span>
                         </div>
+                        {cal.ownerName && (
+                          <div className="mt-0.5 truncate text-[10px] text-zinc-500">
+                            Owner: {cal.ownerName}
+                          </div>
+                        )}
                         <div className="flex items-center gap-1.5 text-[10px] text-zinc-400 truncate mt-0.5">
                           <span
                             className="px-1.5 py-0.2 rounded text-[9px] font-medium"
@@ -1594,17 +1611,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Info Card on Split View */}
-            <div className="p-3 rounded-xl bg-[#1c1c1c] border border-[#282828] text-[11px] text-zinc-400 space-y-1.5 leading-relaxed">
-              <div className="flex items-center gap-1.5 text-zinc-200 font-medium">
-                <Info className="w-3.5 h-3.5 text-[#54a0ff] shrink-0" />
-                <span>How Split-Column Works</span>
-              </div>
-              <p>
-                Check <strong>2 calendars</strong> for side-by-side split columns. Check{' '}
-                <strong>3+ calendars</strong> (e.g. You + Sarah + Huxley 308) to unlock horizontal scrolling!
-              </p>
-            </div>
           </div>
 
           {/* 3. BOTTOM "+ ADD" BUTTON */}

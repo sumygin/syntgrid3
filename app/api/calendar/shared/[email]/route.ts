@@ -32,6 +32,7 @@ export async function GET(_request: Request, context: RouteContext) {
   });
   return NextResponse.json({
     name: friend?.calendarName ?? friend?.name ?? friendEmail.split("@")[0],
+    ownerName: friend?.name ?? friendEmail.split("@")[0],
     email: friendEmail,
     events: Array.isArray(friend?.calendarEvents) ? friend.calendarEvents : [],
   });

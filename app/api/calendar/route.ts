@@ -113,6 +113,7 @@ export async function GET() {
 
   return NextResponse.json({
     name: user?.calendarName ?? `${currentUser.name} (Me)`,
+    ownerName: currentUser.name,
     ics: user?.personalCalendarIcs ?? null,
     events: Array.isArray(user?.calendarEvents) ? user.calendarEvents : [],
   });
