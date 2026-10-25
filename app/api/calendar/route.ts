@@ -92,7 +92,7 @@ async function getCurrentUser() {
   const session = await getServerSession(authOptions);
   const email = session?.user?.email?.trim().toLowerCase();
   if (!email) return null;
-  return { email, name: session?.user?.name || email };
+  return { email, name: session?.user?.name || email, image: session?.user?.image ?? null };
 }
 
 export async function GET() {
@@ -172,6 +172,7 @@ export async function PUT(request: Request) {
       where: { email: currentUser.email },
       update: {
         name: currentUser.name,
+        ...(currentUser.image ? { image: currentUser.image } : {}),
         calendarName: name.trim(),
         personalCalendarIcs: ics,
         calendarEvents: events,
@@ -179,6 +180,7 @@ export async function PUT(request: Request) {
       create: {
         email: currentUser.email,
         name: currentUser.name,
+        image: currentUser.image,
         calendarName: name.trim(),
         personalCalendarIcs: ics,
         calendarEvents: events,

@@ -46,7 +46,7 @@ async function getCurrentUser() {
   const session = await getServerSession(authOptions);
   const email = session?.user?.email?.trim().toLowerCase();
   if (!email) return null;
-  return { email, name: session?.user?.name || email };
+  return { email, name: session?.user?.name || email, image: session?.user?.image ?? null };
 }
 
 export async function GET() {
@@ -111,8 +111,11 @@ export async function POST(request: Request) {
   try {
     const user = await prisma.user.upsert({
       where: { email: currentUser.email },
-      update: {},
-      create: { email: currentUser.email, name: currentUser.name },
+      update: {
+        name: currentUser.name,
+        ...(currentUser.image ? { image: currentUser.image } : {}),
+      },
+      create: { email: currentUser.email, name: currentUser.name, image: currentUser.image },
       select: { id: true },
     });
     const calendar = await prisma.customCalendar.create({

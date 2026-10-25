@@ -81,6 +81,12 @@ export interface FriendRequest {
   events: CalendarEvent[];
 }
 
+interface FriendProfile {
+  email: string;
+  name: string;
+  image: string | null;
+}
+
 export interface HoveredEventInfo extends PositionedEvent {
   ownerName: string;
   ownerEmail: string;
@@ -545,6 +551,10 @@ export default function App() {
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [addModalTab, setAddModalTab] = useState<'friend' | 'custom'>('friend');
   const [friendEmailInput, setFriendEmailInput] = useState<string>('');
+  const [friendProfileSuggestions, setFriendProfileSuggestions] = useState<FriendProfile[]>([]);
+  const [isSearchingFriendProfiles, setIsSearchingFriendProfiles] = useState(false);
+  const [friendProfileSearchError, setFriendProfileSearchError] = useState('');
+  const [isFriendProfileDropdownOpen, setIsFriendProfileDropdownOpen] = useState(false);
 
   // Custom Timetable Upload state
   const [customCalName, setCustomCalName] = useState<string>('');
@@ -581,6 +591,48 @@ export default function App() {
       });
     return () => controller.abort();
   }, [status]);
+
+  useEffect(() => {
+    const query = friendEmailInput.trim();
+    if (
+      !isAddModalOpen ||
+      addModalTab !== 'friend' ||
+      !isFriendProfileDropdownOpen ||
+      query.length < 2
+    ) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      setIsSearchingFriendProfiles(true);
+      setFriendProfileSearchError('');
+      fetch(`/api/friends/search?q=${encodeURIComponent(query)}`, { signal: controller.signal })
+        .then((response) => readApiResponse<{ profiles: FriendProfile[] }>(response))
+        .then((data) => setFriendProfileSuggestions(data.profiles))
+        .catch((error: unknown) => {
+          if (!controller.signal.aborted) {
+            setFriendProfileSuggestions([]);
+            setFriendProfileSearchError(
+              error instanceof Error ? error.message : 'Could not search profiles.'
+            );
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setIsSearchingFriendProfiles(false);
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [
+    addModalTab,
+    friendEmailInput,
+    isAddModalOpen,
+    isFriendProfileDropdownOpen
+  ]);
 
   useEffect(() => {
     if (status !== 'authenticated' || !session?.user?.email) return;
@@ -792,6 +844,8 @@ export default function App() {
       await readApiResponse<{ ok: boolean }>(response);
       showToast(`Calendar share request sent to ${cleanEmail}.`);
       setFriendEmailInput('');
+      setFriendProfileSuggestions([]);
+      setIsFriendProfileDropdownOpen(false);
       setIsAddModalOpen(false);
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not send this request.');
@@ -1686,7 +1740,11 @@ export default function App() {
                 Add to syntgrid
               </h3>
               <button
-                onClick={() => setIsAddModalOpen(false)}
+                onClick={() => {
+                  setIsAddModalOpen(false);
+                  setFriendProfileSuggestions([]);
+                  setIsFriendProfileDropdownOpen(false);
+                }}
                 className="p-1 rounded-lg hover:bg-[#262626] text-zinc-400 hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -1724,18 +1782,93 @@ export default function App() {
               <form onSubmit={handleAddFriendSubmit} className="p-5 space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-zinc-200 mb-1.5">
-                    Friend&apos;s account email
+                    Search for a friend
                   </label>
                   <input
-                    type="email"
+                    type="text"
                     required
                     value={friendEmailInput}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFriendEmailInput(e.target.value)}
-                    placeholder="e.g. j.smith26@imperial.ac.uk"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-expanded={
+                      isFriendProfileDropdownOpen &&
+                      friendEmailInput.trim().length >= 2
+                    }
+                    aria-controls="friend-profile-suggestions"
+                    autoComplete="off"
+                    onFocus={() => setIsFriendProfileDropdownOpen(true)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      setFriendEmailInput(e.target.value);
+                      setFriendProfileSuggestions([]);
+                      setFriendProfileSearchError('');
+                      setIsFriendProfileDropdownOpen(true);
+                    }}
+                    placeholder="Search by name or email"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#121212] border border-[#303030] focus:border-[#ff9f43] focus:outline-none text-xs text-white"
                   />
+                  {isFriendProfileDropdownOpen && friendEmailInput.trim().length >= 2 && (
+                    <div
+                      id="friend-profile-suggestions"
+                      role="listbox"
+                      aria-label="Matching profiles"
+                      className="mt-1 max-h-64 overflow-y-auto rounded-xl border border-[#343434] bg-[#171717] shadow-xl"
+                    >
+                      {isSearchingFriendProfiles ? (
+                        <p className="px-3 py-3 text-xs text-zinc-400">Searching profiles…</p>
+                      ) : friendProfileSearchError ? (
+                        <p role="alert" className="px-3 py-3 text-xs text-rose-300">
+                          {friendProfileSearchError}
+                        </p>
+                      ) : friendProfileSuggestions.length > 0 ? (
+                        friendProfileSuggestions.map((profile) => (
+                          <button
+                            key={profile.email}
+                            type="button"
+                            role="option"
+                            aria-selected={friendEmailInput === profile.email}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => {
+                              setFriendEmailInput(profile.email);
+                              setIsFriendProfileDropdownOpen(false);
+                            }}
+                            className="flex w-full items-center gap-3 border-b border-[#292929] px-3 py-2.5 text-left last:border-b-0 hover:bg-[#242424] focus:bg-[#242424] focus:outline-none"
+                          >
+                            {profile.image ? (
+                              <Image
+                                src={profile.image}
+                                alt=""
+                                width={36}
+                                height={36}
+                                unoptimized
+                                className="h-9 w-9 shrink-0 rounded-full object-cover"
+                              />
+                            ) : (
+                              <span
+                                aria-hidden="true"
+                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#ff9f43]/20 text-sm font-bold text-[#ffbd78]"
+                              >
+                                {(profile.name || profile.email).slice(0, 1).toUpperCase()}
+                              </span>
+                            )}
+                            <span className="min-w-0">
+                              <span className="block truncate text-xs font-semibold text-zinc-100">
+                                {profile.name}
+                              </span>
+                              <span className="mt-0.5 block truncate text-[11px] text-zinc-400">
+                                {profile.email}
+                              </span>
+                            </span>
+                          </button>
+                        ))
+                      ) : (
+                        <p className="px-3 py-3 text-xs text-zinc-400">
+                          No matching profiles. You can still enter an account email.
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <p className="text-[11px] text-zinc-400 mt-1.5">
-                    They will receive an <strong>Accept / Decline</strong> prompt. Once accepted, their saved personal .ics calendar appears in your comparison.
+                    Search by profile name or email, or enter their account email. They&apos;ll receive an invitation to share their calendar.
                   </p>
                 </div>
 

@@ -11,6 +11,7 @@ datasource db {
     id           String   @id @default(auto()) @map("_id") @db.ObjectId
     email        String   @unique
     name         String
+    image        String?
     calendarName       String?
     personalCalendarIcs String?
     calendarEvents     Json?
