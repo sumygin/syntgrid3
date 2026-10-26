@@ -579,11 +579,17 @@ export default function App() {
   const [editingPersonalEvents, setEditingPersonalEvents] = useState<CalendarEvent[]>([]);
   const [isSavingPersonalCalendar, setIsSavingPersonalCalendar] = useState(false);
   const calendarPanRef = useRef<CalendarPanState | null>(null);
+  const calendarScrollRef = useRef<HTMLDivElement | null>(null);
+  const hasInitialCalendarFocus = useRef(false);
   const [isPanningCalendar, setIsPanningCalendar] = useState(false);
 
   // Rest of your state and handlers...
   // Week offset state
-  const [weekOffset, setWeekOffset] = useState<number>(0);
+  const [weekOffset, setWeekOffset] = useState<number>(() => {
+    const now = new Date();
+    const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.floor((today - BASE_WEEK_START_UTC) / (7 * 86_400_000));
+  });
 
   const weekStart = new Date(BASE_WEEK_START_UTC + weekOffset * 7 * 86_400_000);
   const weekEnd = new Date(weekStart.getTime() + 6 * 86_400_000);
@@ -846,6 +852,47 @@ export default function App() {
   const activeCalendars: CalendarItemWithPalette[] = useMemo(() => {
     return calendarsWithColors.filter((c) => c.checked);
   }, [calendarsWithColors]);
+
+  useEffect(() => {
+    if (!loadedAccountEmail || !currentTime || calendars.length === 0 || hasInitialCalendarFocus.current) {
+      return;
+    }
+
+    const todayWeek = todayWeekOffset;
+    if (weekOffset !== todayWeek) return;
+
+    const earliestTodayEvent = activeCalendars
+      .flatMap((calendar) => calendar.events)
+      .filter((event) =>
+        event.dayIndex === todayDayIndex && (event.weekOffset ?? 0) === todayWeek
+      )
+      .reduce<number | null>(
+        (earliest, event) => earliest === null ? event.start : Math.min(earliest, event.start),
+        null
+      );
+    const earliestWeekEvent = activeCalendars
+      .flatMap((calendar) => calendar.events)
+      .filter((event) => (event.weekOffset ?? 0) === todayWeek)
+      .reduce<number | null>(
+        (earliest, event) => earliest === null ? event.start : Math.min(earliest, event.start),
+        null
+      );
+    const earliestEvent = earliestTodayEvent ?? earliestWeekEvent;
+    const scrollTop = (earliestEvent ?? 9) * HOUR_HEIGHT;
+    const scrollContainer = calendarScrollRef.current;
+    if (!scrollContainer) return;
+
+    scrollContainer.scrollTo({ top: scrollTop, behavior: 'auto' });
+    hasInitialCalendarFocus.current = true;
+  }, [
+    activeCalendars,
+    calendars.length,
+    currentTime,
+    loadedAccountEmail,
+    todayDayIndex,
+    todayWeekOffset,
+    weekOffset
+  ]);
 
   // Horizontal scroll rule: active when > 2 calendars are checked
   const isHorizontalScrollMode = activeCalendars.length > 1;
@@ -1502,6 +1549,7 @@ export default function App() {
         <main className="flex-1 flex flex-col overflow-hidden bg-[#121212]">
           {/* Scrollable Wrapper */}
           <div
+            ref={calendarScrollRef}
             className={`flex-1 overflow-auto relative touch-none ${
               isPanningCalendar ? 'cursor-grabbing' : 'cursor-grab'
             }`}
