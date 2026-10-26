@@ -94,6 +94,11 @@ interface FriendGroup {
   isActive: boolean;
 }
 
+interface SelectionCache {
+  calendarChecked: Record<string, boolean>;
+  groupActive: Record<string, boolean>;
+}
+
 interface CalendarPanState {
   pointerId: number;
   startX: number;
@@ -264,6 +269,51 @@ function layoutEventsInSubcolumn(events: CalendarEvent[]): PositionedEvent[] {
   });
 
   return positioned;
+}
+
+const SELECTION_CACHE_PREFIX = 'syntgrid-selection-cache:';
+
+function getSelectionCache(accountEmail: string): SelectionCache | null {
+  try {
+    const stored = window.localStorage.getItem(
+      `${SELECTION_CACHE_PREFIX}${accountEmail.toLowerCase()}`
+    );
+    if (!stored) return null;
+    const parsed: unknown = JSON.parse(stored);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const cache = parsed as Partial<SelectionCache>;
+    if (
+      !cache.calendarChecked ||
+      typeof cache.calendarChecked !== 'object' ||
+      !cache.groupActive ||
+      typeof cache.groupActive !== 'object'
+    ) {
+      return null;
+    }
+    return {
+      calendarChecked: cache.calendarChecked as Record<string, boolean>,
+      groupActive: cache.groupActive as Record<string, boolean>
+    };
+  } catch (error) {
+    console.warn('Could not read saved calendar selections.', error);
+    return null;
+  }
+}
+
+function saveSelectionCache(accountEmail: string, calendars: CalendarItem[], groups: FriendGroup[]) {
+  try {
+    window.localStorage.setItem(
+      `${SELECTION_CACHE_PREFIX}${accountEmail.toLowerCase()}`,
+      JSON.stringify({
+        calendarChecked: Object.fromEntries(
+          calendars.map((calendar) => [calendar.id, calendar.checked])
+        ),
+        groupActive: Object.fromEntries(groups.map((group) => [group.id, group.isActive]))
+      } satisfies SelectionCache)
+    );
+  } catch (error) {
+    console.warn('Could not save calendar selections.', error);
+  }
 }
 
 // ============================================================================
@@ -742,18 +792,31 @@ export default function App() {
         lastSynced: 'Private to your account',
         events: calendar.events
       }));
+      const savedSelections = getSelectionCache(accountEmail);
+      const savedCalendarChecked = savedSelections?.calendarChecked ?? {};
+      const savedGroupActive = savedSelections?.groupActive ?? {};
+      const savedGroups = groupsData.groups.map((group) => ({
+        ...group,
+        isActive: typeof savedGroupActive[group.id] === 'boolean'
+          ? savedGroupActive[group.id]
+          : group.isActive
+      }));
+      const savedCalendars = [ownCalendar, ...extraCalendars, ...friendCalendars].map((calendar) => ({
+        ...calendar,
+        checked: typeof savedCalendarChecked[calendar.id] === 'boolean'
+          ? savedCalendarChecked[calendar.id]
+          : calendar.checked
+      }));
 
       setFriendRequests(pendingRequests);
-      setFriendGroups(groupsData.groups);
+      setFriendGroups(savedGroups);
       setCalendars((previous) => [
-        ownCalendar,
+        ...savedCalendars,
         ...previous.filter((calendar) =>
           calendar.type !== 'outlook-me' &&
           calendar.type !== 'outlook-friend' &&
           calendar.type !== 'custom-file'
         ),
-        ...extraCalendars,
-        ...friendCalendars
       ]);
     };
 
@@ -765,6 +828,11 @@ export default function App() {
     });
     return () => controller.abort();
   }, [session?.user?.email, session?.user?.name, status]);
+
+  useEffect(() => {
+    if (!loadedAccountEmail || calendars.length === 0) return;
+    saveSelectionCache(loadedAccountEmail, calendars, friendGroups);
+  }, [calendars, friendGroups, loadedAccountEmail]);
 
   // Assign rainbow colors deterministically based on calendar order
   const calendarsWithColors: CalendarItemWithPalette[] = useMemo(() => {
