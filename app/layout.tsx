@@ -1,6 +1,8 @@
 import './globals.css';
 import Providers from './providers';
 
+import { Analytics } from "@vercel/analytics/next"
+
 export const metadata = {
   title: 'syntgrid | Compare your calendars',
   description: 'Upload, edit, and compare personal timetable calendars',
