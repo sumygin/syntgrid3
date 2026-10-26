@@ -581,15 +581,12 @@ export default function App() {
   const calendarPanRef = useRef<CalendarPanState | null>(null);
   const calendarScrollRef = useRef<HTMLDivElement | null>(null);
   const hasInitialCalendarFocus = useRef(false);
+  const hasInitialTodayFocus = useRef(false);
   const [isPanningCalendar, setIsPanningCalendar] = useState(false);
 
   // Rest of your state and handlers...
   // Week offset state
-  const [weekOffset, setWeekOffset] = useState<number>(() => {
-    const now = new Date();
-    const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-    return Math.floor((today - BASE_WEEK_START_UTC) / (7 * 86_400_000));
-  });
+  const [weekOffset, setWeekOffset] = useState<number>(0);
 
   const weekStart = new Date(BASE_WEEK_START_UTC + weekOffset * 7 * 86_400_000);
   const weekEnd = new Date(weekStart.getTime() + 6 * 86_400_000);
@@ -604,7 +601,15 @@ export default function App() {
   const todayDayIndex = (new Date(todayDay).getUTCDay() + 6) % 7;
 
   useEffect(() => {
-    const updateCurrentTime = () => setCurrentTime(new Date());
+    const updateCurrentTime = () => {
+      const now = new Date();
+      setCurrentTime(now);
+      if (!hasInitialTodayFocus.current) {
+        const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+        setWeekOffset(Math.floor((today - BASE_WEEK_START_UTC) / (7 * 86_400_000)));
+        hasInitialTodayFocus.current = true;
+      }
+    };
     updateCurrentTime();
     const intervalId = window.setInterval(updateCurrentTime, 30_000);
     return () => window.clearInterval(intervalId);
