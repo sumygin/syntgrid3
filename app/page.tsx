@@ -18,8 +18,6 @@ import {
   User,
   LogOut,
   FileText,
-  Columns,
-  MoveHorizontal,
   Copy,
   CheckCircle2,
   Pencil
@@ -650,6 +648,8 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [isCodeModalOpen, setIsCodeModalOpen] = useState<boolean>(false);
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
+  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
   const [copiedSnippet, setCopiedSnippet] = useState<string>('');
 
   // Status Banner Toast
@@ -658,6 +658,52 @@ export default function App() {
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  useEffect(() => {
+    let timeoutId: number | undefined;
+    try {
+      const savedImage = window.localStorage.getItem('syntgrid-background-image');
+      timeoutId = window.setTimeout(() => setBackgroundImage(savedImage), 0);
+    } catch (error) {
+      console.warn('Could not load the saved background image.', error);
+    }
+    return () => {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+  }, []);
+
+  const handleBackgroundImage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      showToast('Choose an image file for the background.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') return;
+      try {
+        window.localStorage.setItem('syntgrid-background-image', reader.result);
+        setBackgroundImage(reader.result);
+        showToast('Background saved on this device.');
+      } catch (error) {
+        console.warn('Could not save the background image.', error);
+        showToast('That image is too large to save locally.');
+      }
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
+  };
+
+  const clearBackgroundImage = () => {
+    try {
+      window.localStorage.removeItem('syntgrid-background-image');
+      setBackgroundImage(null);
+      showToast('Background reset.');
+    } catch (error) {
+      console.warn('Could not clear the background image.', error);
+    }
   };
 
   useEffect(() => {
@@ -1423,7 +1469,15 @@ export default function App() {
   
 
   return (
-    <div className="min-h-screen bg-[#121212] text-zinc-100 flex flex-col font-sans select-none md:h-screen md:w-screen md:overflow-hidden">
+    <div
+      className="min-h-screen bg-[#121212] text-zinc-100 flex flex-col font-sans select-none md:h-screen md:w-screen md:overflow-hidden"
+      style={backgroundImage ? {
+        backgroundImage: `linear-gradient(rgba(18,18,18,.84), rgba(18,18,18,.92)), url(${backgroundImage})`,
+        backgroundPosition: 'center',
+        backgroundSize: 'cover',
+        backgroundAttachment: 'fixed'
+      } : undefined}
+    >
       {/* ====================================================================
           TOP NAVIGATION BAR (Matches your Outlook/Scientia week bar)
          ==================================================================== */}
@@ -1438,7 +1492,7 @@ export default function App() {
               height={32}
               className="h-8 w-8 rounded-lg object-cover"
             />
-            <span className="font-bold tracking-tight text-sm text-white hidden sm:inline">
+            <span className="font-mono font-bold tracking-tight text-sm text-white hidden sm:inline">
               syntgrid
             </span>
             <span className="hidden sm:inline text-[10px] text-zinc-500">
@@ -1472,7 +1526,7 @@ export default function App() {
             </button>
           </div>
 
-          <h2 className="min-w-0 truncate text-sm sm:text-base font-semibold text-zinc-100 tracking-tight">
+          <h2 className="min-w-0 truncate font-serif text-sm sm:text-base font-semibold text-zinc-100 tracking-tight">
             {dateLabel.format(weekStart)} – {dateLabel.format(weekEnd)}
 
           </h2>
@@ -1480,37 +1534,13 @@ export default function App() {
 
         {/* Center/Right: Active Split-Column Mode Pill + Stack Code Guide + User */}
         <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:gap-2.5">
-          {/* Split View Status Pill */}
-          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1f1f1f] border border-[#2e2e2e] text-xs text-zinc-300">
-            {isHorizontalScrollMode ? (
-              <>
-                <MoveHorizontal className="w-3.5 h-3.5 text-[#feca57]" />
-                <span>
-                  Comparing <strong>{activeCalendars.length}</strong> calendars •{' '}
-                  <span className="text-[#feca57]">Side-by-side view active</span>
-                </span>
-              </>
-            ) : (
-              <>
-                <Columns className="w-3.5 h-3.5 text-[#ff9f43]" />
-                <span>
-                  Comparing <strong>{activeCalendars.length}</strong>{' '}
-                  {activeCalendars.length === 1 ? 'calendar' : 'calendars'}
-                </span>
-              </>
-            )}
-          </div>
-
-          <a
-            href="/tutorial"
-            className="hidden px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-200 text-xs font-medium transition sm:block"
+          <button
+            type="button"
+            onClick={() => setIsTutorialOpen(true)}
+            className="px-2.5 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-200 text-[11px] font-medium transition sm:px-3 sm:text-xs"
           >
             Calendar tutorial
-          </a>
-          <nav className="hidden xl:flex items-center gap-2 text-[11px] text-zinc-500">
-            <a href="/privacy" className="hover:text-zinc-300 hover:underline">Privacy</a>
-            <a href="/terms" className="hover:text-zinc-300 hover:underline">Terms</a>
-          </nav>
+          </button>
 
           {/* Logged-in account */}
           <div className="flex items-center gap-2 pl-2 border-l border-[#2a2a2a]">
@@ -1574,7 +1604,7 @@ export default function App() {
               {/* STICKY DAY HEADERS ROW */}
               <div className="sticky top-0 z-20 bg-[#161616] border-b border-[#262626] flex">
                 {/* Top-Left Time Gutter Corner */}
-                <div className="w-16 shrink-0 border-r border-[#262626] flex items-center justify-center text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+                <div className="sticky left-0 z-30 w-16 shrink-0 border-r border-[#262626] bg-[#161616] flex items-center justify-center text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
                   GMT+1
                 </div>
 
@@ -1662,7 +1692,7 @@ export default function App() {
               <div className="flex flex-none relative" style={{ height: `${HOURS.length * HOUR_HEIGHT}px` }}>
 
                 {/* Left Time Labels Column */}
-                <div className="w-16 shrink-0 border-r border-[#262626] bg-[#141414] relative select-none">
+                <div className="sticky left-0 z-10 w-16 shrink-0 border-r border-[#262626] bg-[#141414] relative select-none">
                   {HOURS.map((hour: number) => (
                     <div
                       key={hour}
@@ -2087,6 +2117,27 @@ export default function App() {
 
           {/* 3. BOTTOM "+ ADD" BUTTON */}
           <div className="p-4 border-t border-[#262626] bg-[#151515]">
+            <div className="mb-2 flex items-center gap-2">
+              <label className="flex min-w-0 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#343434] bg-[#202020] px-3 py-2 text-[11px] font-medium text-zinc-300 transition hover:border-sky-400/50 hover:text-sky-200">
+                <Upload className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{backgroundImage ? 'Change background' : 'Add background'}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleBackgroundImage}
+                  className="sr-only"
+                />
+              </label>
+              {backgroundImage && (
+                <button
+                  type="button"
+                  onClick={clearBackgroundImage}
+                  className="rounded-xl border border-[#343434] px-3 py-2 text-[11px] text-zinc-400 transition hover:border-rose-400/50 hover:text-rose-200"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
             <button
               onClick={() => {
                 setUploadError('');
@@ -2142,6 +2193,60 @@ export default function App() {
             <div className="flex items-center gap-1.5">
               <User className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
               <span>{hoveredEvent.lecturer}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isTutorialOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[#303030] bg-[#191919] shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-[#2b2b2b] px-5 py-4">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-300">
+                  quick reference
+                </p>
+                <h3 className="mt-1 font-serif text-lg font-semibold text-white">
+                  Upload your Imperial timetable
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTutorialOpen(false)}
+                className="rounded-lg p-1.5 text-zinc-400 transition hover:bg-[#292929] hover:text-white"
+                aria-label="Close calendar tutorial"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto px-5 py-5 text-sm leading-relaxed text-zinc-300">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <section className="rounded-xl border border-[#303030] bg-[#202020] p-4">
+                  <h4 className="font-semibold text-white">Classic Outlook</h4>
+                  <ol className="mt-2 space-y-2 text-xs">
+                    <li>1. Open your Imperial timetable.</li>
+                    <li>2. Choose <strong className="text-white">File → Save Calendar</strong>.</li>
+                    <li>3. Select your date range and full details.</li>
+                    <li>4. Save the file with an <strong className="text-white">.ics</strong> extension.</li>
+                  </ol>
+                </section>
+                <section className="rounded-xl border border-[#303030] bg-[#202020] p-4">
+                  <h4 className="font-semibold text-white">Outlook on the web</h4>
+                  <ol className="mt-2 space-y-2 text-xs">
+                    <li>1. Open <strong className="text-white">Settings → Calendar → Shared calendars</strong>.</li>
+                    <li>2. Select your Imperial timetable under Publish a calendar.</li>
+                    <li>3. Open the ICS link and save it as a file.</li>
+                  </ol>
+                </section>
+              </div>
+              <p className="mt-4 rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-xs text-amber-100">
+                Upload it with <strong>Add Friend or Room Timetable</strong>. My Calendar is shareable with accepted friends; Extra calendar stays private.
+              </p>
+              <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[#2b2b2b] pt-4 text-xs">
+                <a href="/privacy" className="text-sky-300 hover:underline">Privacy policy</a>
+                <a href="/terms" className="text-sky-300 hover:underline">Terms of service</a>
+                <span className="font-mono text-zinc-600">stored locally for this session</span>
+              </div>
             </div>
           </div>
         </div>
