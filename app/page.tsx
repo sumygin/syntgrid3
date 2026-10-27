@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import { useSession, signIn, signOut } from 'next-auth/react';
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -104,6 +104,14 @@ interface CalendarPanState {
   startScrollLeft: number;
   startScrollTop: number;
   hasMoved: boolean;
+}
+
+interface EventResizeState {
+  eventId: string;
+  edge: 'start' | 'end';
+  pointerY: number;
+  originalStart: number;
+  originalEnd: number;
 }
 
 export interface HoveredEventInfo extends PositionedEvent {
@@ -578,8 +586,13 @@ export default function App() {
   const [isSavingPersonalCalendar, setIsSavingPersonalCalendar] = useState(false);
   const calendarPanRef = useRef<CalendarPanState | null>(null);
   const calendarScrollRef = useRef<HTMLDivElement | null>(null);
+  const calendarsRef = useRef<CalendarItem[]>([]);
+  const eventIdRef = useRef(0);
   const hasInitialCalendarFocus = useRef(false);
   const hasInitialTodayFocus = useRef(false);
+  const [eventDetails, setEventDetails] = useState<CalendarEvent | null>(null);
+  const [isSavingEventDetails, setIsSavingEventDetails] = useState(false);
+  const [eventResize, setEventResize] = useState<EventResizeState | null>(null);
   const [isPanningCalendar, setIsPanningCalendar] = useState(false);
 
   // Rest of your state and handlers...
@@ -649,7 +662,6 @@ export default function App() {
 
   const [isCodeModalOpen, setIsCodeModalOpen] = useState<boolean>(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
-  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
   const [copiedSnippet, setCopiedSnippet] = useState<string>('');
 
   // Status Banner Toast
@@ -658,52 +670,6 @@ export default function App() {
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
-  };
-
-  useEffect(() => {
-    let timeoutId: number | undefined;
-    try {
-      const savedImage = window.localStorage.getItem('syntgrid-background-image');
-      timeoutId = window.setTimeout(() => setBackgroundImage(savedImage), 0);
-    } catch (error) {
-      console.warn('Could not load the saved background image.', error);
-    }
-    return () => {
-      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-    };
-  }, []);
-
-  const handleBackgroundImage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      showToast('Choose an image file for the background.');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result !== 'string') return;
-      try {
-        window.localStorage.setItem('syntgrid-background-image', reader.result);
-        setBackgroundImage(reader.result);
-        showToast('Background saved on this device.');
-      } catch (error) {
-        console.warn('Could not save the background image.', error);
-        showToast('That image is too large to save locally.');
-      }
-    };
-    reader.readAsDataURL(file);
-    event.target.value = '';
-  };
-
-  const clearBackgroundImage = () => {
-    try {
-      window.localStorage.removeItem('syntgrid-background-image');
-      setBackgroundImage(null);
-      showToast('Background reset.');
-    } catch (error) {
-      console.warn('Could not clear the background image.', error);
-    }
   };
 
   useEffect(() => {
@@ -1347,6 +1313,140 @@ export default function App() {
     }
   };
 
+  const updateOwnCalendarEvents = (events: CalendarEvent[]) => {
+    setCalendars((previous) => previous.map((calendar) =>
+      calendar.id === 'cal-me' ? { ...calendar, events } : calendar
+    ));
+  };
+
+  const saveOwnCalendarEvents = useCallback(async (events: CalendarEvent[]) => {
+    const currentCalendar = calendars.find((calendar) => calendar.id === 'cal-me');
+    if (!currentCalendar) throw new Error('Your personal calendar is not available.');
+    const response = await fetch('/api/calendar', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: currentCalendar.name,
+        ics: eventsToIcs(events, currentCalendar.name),
+        events: events.map((event) => ({ ...event, weekOffset: event.weekOffset ?? 0 }))
+      })
+    });
+    await readApiResponse<{ name: string }>(response);
+    updateOwnCalendarEvents(events);
+  }, [calendars]);
+
+  const openNewCalendarEvent = (
+    event: React.MouseEvent<HTMLDivElement>,
+    dayIndex: number,
+    week: number
+  ) => {
+    if (event.target !== event.currentTarget || event.detail !== 2) return;
+    event.stopPropagation();
+    const personalCalendar = calendars.find((calendar) => calendar.id === 'cal-me');
+    if (!personalCalendar?.checked) {
+      showToast('Enable My Calendar before adding an event.');
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const rawHour = (event.clientY - rect.top) / HOUR_HEIGHT;
+    const start = Math.max(0, Math.min(23.75, Math.round(rawHour * 4) / 4));
+    const newEvent: CalendarEvent = {
+      id: `event-new-${eventIdRef.current++}`,
+      dayIndex,
+      weekOffset: week,
+      start,
+      end: Math.min(24, start + 1),
+      title: 'New event',
+      location: '',
+      lecturer: '',
+      category: 'Personal'
+    };
+    const events = [...personalCalendar.events, newEvent];
+    updateOwnCalendarEvents(events);
+    setEventDetails(newEvent);
+  };
+
+  const startEventResize = (
+    event: React.PointerEvent<HTMLDivElement>,
+    calendar: CalendarItem,
+    calendarEvent: CalendarEvent,
+    edge: 'start' | 'end'
+  ) => {
+    if (calendar.id !== 'cal-me') return;
+    event.stopPropagation();
+    event.preventDefault();
+    setEventResize({
+      eventId: calendarEvent.id,
+      edge,
+      pointerY: event.clientY,
+      originalStart: calendarEvent.start,
+      originalEnd: calendarEvent.end
+    });
+  };
+
+  useEffect(() => {
+    if (!eventResize) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const delta = Math.round(((event.clientY - eventResize.pointerY) / HOUR_HEIGHT) * 4) / 4;
+      const nextValue = Math.max(0, Math.min(24, (eventResize.edge === 'start'
+        ? eventResize.originalStart + delta
+        : eventResize.originalEnd + delta)));
+      setCalendars((previous) => previous.map((calendar) => {
+        if (calendar.id !== 'cal-me') return calendar;
+        return {
+          ...calendar,
+          events: calendar.events.map((calendarEvent) => {
+            if (calendarEvent.id !== eventResize.eventId) return calendarEvent;
+            if (eventResize.edge === 'start') {
+              return { ...calendarEvent, start: Math.min(nextValue, calendarEvent.end - 0.25) };
+            }
+            return { ...calendarEvent, end: Math.max(nextValue, calendarEvent.start + 0.25) };
+          })
+        };
+      }));
+    };
+    const handlePointerUp = () => {
+      const personalCalendar = calendarsRef.current.find((calendar) => calendar.id === 'cal-me');
+      if (personalCalendar) {
+        void saveOwnCalendarEvents(personalCalendar.events).catch((error: unknown) => {
+          showToast(error instanceof Error ? error.message : 'Could not save the resized event.');
+        });
+      }
+      setEventResize(null);
+    };
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [eventResize, saveOwnCalendarEvents]);
+
+  useEffect(() => {
+    calendarsRef.current = calendars;
+  }, [calendars]);
+
+  const saveEventDetails = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!eventDetails) return;
+    setIsSavingEventDetails(true);
+    try {
+      const personalCalendar = calendars.find((calendar) => calendar.id === 'cal-me');
+      if (!personalCalendar) throw new Error('Your personal calendar is not available.');
+      const events = personalCalendar.events.map((calendarEvent) =>
+        calendarEvent.id === eventDetails.id ? eventDetails : calendarEvent
+      );
+      await saveOwnCalendarEvents(events);
+      setEventDetails(null);
+      showToast('Event saved to your personal calendar.');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not save this event.');
+    } finally {
+      setIsSavingEventDetails(false);
+    }
+  };
+
   // Copy Gemini prompt helper with fallback for permissions policy
   const copyText = async (text: string, key: string) => {
     let copied = false;
@@ -1469,15 +1569,7 @@ export default function App() {
   
 
   return (
-    <div
-      className="min-h-screen bg-[#121212] text-zinc-100 flex flex-col font-sans select-none md:h-screen md:w-screen md:overflow-hidden"
-      style={backgroundImage ? {
-        backgroundImage: `linear-gradient(rgba(18,18,18,.84), rgba(18,18,18,.92)), url(${backgroundImage})`,
-        backgroundPosition: 'center',
-        backgroundSize: 'cover',
-        backgroundAttachment: 'fixed'
-      } : undefined}
-    >
+    <div className="min-h-screen bg-[#121212] text-zinc-100 flex flex-col font-sans select-none md:h-screen md:w-screen md:overflow-hidden">
       {/* ====================================================================
           TOP NAVIGATION BAR (Matches your Outlook/Scientia week bar)
          ==================================================================== */}
@@ -1742,6 +1834,7 @@ export default function App() {
                             <div
                               key={cal.id}
                               className="flex-1 h-full relative border-r border-[#1e1e1e] last:border-r-0"
+                              onDoubleClick={(event) => openNewCalendarEvent(event, day.dayIndex, weekOffset)}
                             >
                               {positionedEvents.map((ev: PositionedEvent) => {
                                 const topPx = ev.start * HOUR_HEIGHT;
@@ -1757,6 +1850,10 @@ export default function App() {
                                   <div
                                     key={ev.id}
                                     data-calendar-event
+                                    onDoubleClick={(event) => {
+                                      event.stopPropagation();
+                                      if (cal.id === 'cal-me') setEventDetails({ ...ev });
+                                    }}
                                     onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => {
                                       const rect = e.currentTarget.getBoundingClientRect();
                                       setTooltipPos({
@@ -1786,6 +1883,18 @@ export default function App() {
                                         : 'border border-l-[3px]'
                                     }`}
                                   >
+                                    {cal.id === 'cal-me' && (
+                                      <>
+                                        <div
+                                          className="absolute inset-x-0 top-0 z-10 h-2 cursor-ns-resize"
+                                          onPointerDown={(event) => startEventResize(event, cal, ev, 'start')}
+                                        />
+                                        <div
+                                          className="absolute inset-x-0 bottom-0 z-10 h-2 cursor-ns-resize"
+                                          onPointerDown={(event) => startEventResize(event, cal, ev, 'end')}
+                                        />
+                                      </>
+                                    )}
                                     <div className="min-w-0">
                                       <div className="flex items-start justify-between gap-1">
                                         <p
@@ -2117,27 +2226,6 @@ export default function App() {
 
           {/* 3. BOTTOM "+ ADD" BUTTON */}
           <div className="p-4 border-t border-[#262626] bg-[#151515]">
-            <div className="mb-2 flex items-center gap-2">
-              <label className="flex min-w-0 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#343434] bg-[#202020] px-3 py-2 text-[11px] font-medium text-zinc-300 transition hover:border-sky-400/50 hover:text-sky-200">
-                <Upload className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{backgroundImage ? 'Change background' : 'Add background'}</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleBackgroundImage}
-                  className="sr-only"
-                />
-              </label>
-              {backgroundImage && (
-                <button
-                  type="button"
-                  onClick={clearBackgroundImage}
-                  className="rounded-xl border border-[#343434] px-3 py-2 text-[11px] text-zinc-400 transition hover:border-rose-400/50 hover:text-rose-200"
-                >
-                  Reset
-                </button>
-              )}
-            </div>
             <button
               onClick={() => {
                 setUploadError('');
@@ -2570,6 +2658,106 @@ export default function App() {
               </form>
             )}
           </div>
+        </div>
+      )}
+
+      {eventDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={saveEventDetails}
+            className="w-full max-w-md rounded-2xl border border-[#303030] bg-[#1a1a1a] p-5 shadow-2xl"
+          >
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-300">
+                  personal event
+                </p>
+                <h3 className="mt-1 font-serif text-lg font-semibold text-white">
+                  Event details
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEventDetails(null)}
+                className="rounded-lg p-1.5 text-zinc-400 transition hover:bg-[#292929] hover:text-white"
+                aria-label="Close event details"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <label className="block text-xs text-zinc-400">
+                Title
+                <input
+                  autoFocus
+                  required
+                  value={eventDetails.title}
+                  onChange={(event) => setEventDetails({ ...eventDetails, title: event.target.value })}
+                  className="mt-1 w-full rounded-lg border border-[#383838] bg-[#111] px-3 py-2 text-sm text-white outline-none focus:border-emerald-400"
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block text-xs text-zinc-400">
+                  Start
+                  <input
+                    type="time"
+                    step="900"
+                    value={`${String(Math.floor(eventDetails.start)).padStart(2, '0')}:${String(Math.round((eventDetails.start % 1) * 60)).padStart(2, '0')}`}
+                    onChange={(event) => setEventDetails({
+                      ...eventDetails,
+                      start: Number(event.target.value.slice(0, 2)) + Number(event.target.value.slice(3)) / 60
+                    })}
+                    className="mt-1 w-full rounded-lg border border-[#383838] bg-[#111] px-3 py-2 text-sm text-white outline-none focus:border-emerald-400"
+                  />
+                </label>
+                <label className="block text-xs text-zinc-400">
+                  End
+                  <input
+                    type="time"
+                    step="900"
+                    value={`${String(Math.floor(eventDetails.end)).padStart(2, '0')}:${String(Math.round((eventDetails.end % 1) * 60)).padStart(2, '0')}`}
+                    onChange={(event) => setEventDetails({
+                      ...eventDetails,
+                      end: Number(event.target.value.slice(0, 2)) + Number(event.target.value.slice(3)) / 60
+                    })}
+                    className="mt-1 w-full rounded-lg border border-[#383838] bg-[#111] px-3 py-2 text-sm text-white outline-none focus:border-emerald-400"
+                  />
+                </label>
+              </div>
+              <label className="block text-xs text-zinc-400">
+                Location
+                <input
+                  value={eventDetails.location}
+                  onChange={(event) => setEventDetails({ ...eventDetails, location: event.target.value })}
+                  className="mt-1 w-full rounded-lg border border-[#383838] bg-[#111] px-3 py-2 text-sm text-white outline-none focus:border-emerald-400"
+                />
+              </label>
+              <label className="block text-xs text-zinc-400">
+                Notes / lecturer
+                <input
+                  value={eventDetails.lecturer}
+                  onChange={(event) => setEventDetails({ ...eventDetails, lecturer: event.target.value })}
+                  className="mt-1 w-full rounded-lg border border-[#383838] bg-[#111] px-3 py-2 text-sm text-white outline-none focus:border-emerald-400"
+                />
+              </label>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEventDetails(null)}
+                className="rounded-xl bg-[#292929] px-4 py-2 text-xs font-medium text-zinc-300 hover:bg-[#333]"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingEventDetails || eventDetails.end <= eventDetails.start}
+                className="rounded-xl bg-emerald-400 px-4 py-2 text-xs font-bold text-[#121212] hover:brightness-110 disabled:opacity-50"
+              >
+                {isSavingEventDetails ? 'Saving…' : 'Save event'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
