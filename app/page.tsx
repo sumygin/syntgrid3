@@ -1423,13 +1423,13 @@ export default function App() {
   
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#121212] text-zinc-100 flex flex-col font-sans select-none">
+    <div className="min-h-screen bg-[#121212] text-zinc-100 flex flex-col font-sans select-none md:h-screen md:w-screen md:overflow-hidden">
       {/* ====================================================================
           TOP NAVIGATION BAR (Matches your Outlook/Scientia week bar)
          ==================================================================== */}
-      <header className="h-14 shrink-0 bg-[#171717] border-b border-[#262626] px-4 flex items-center justify-between gap-4 z-20">
+      <header className="min-h-14 shrink-0 bg-[#171717] border-b border-[#262626] px-3 py-2 sm:px-4 md:h-14 md:py-0 flex flex-wrap items-center justify-between gap-2 sm:gap-4 z-20">
         {/* Left: Brand + Week Navigation */}
-        <div className="flex items-center gap-4">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
           <div className="flex items-center gap-2.5 pr-3 border-r border-[#2a2a2a]">
             <Image
               src="/syntgrid-icon.png"
@@ -1472,14 +1472,14 @@ export default function App() {
             </button>
           </div>
 
-          <h2 className="text-sm sm:text-base font-semibold text-zinc-100 tracking-tight">
+          <h2 className="min-w-0 truncate text-sm sm:text-base font-semibold text-zinc-100 tracking-tight">
             {dateLabel.format(weekStart)} – {dateLabel.format(weekEnd)}
 
           </h2>
         </div>
 
         {/* Center/Right: Active Split-Column Mode Pill + Stack Code Guide + User */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:gap-2.5">
           {/* Split View Status Pill */}
           <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1f1f1f] border border-[#2e2e2e] text-xs text-zinc-300">
             {isHorizontalScrollMode ? (
@@ -1503,7 +1503,7 @@ export default function App() {
 
           <a
             href="/tutorial"
-            className="px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-200 text-xs font-medium transition"
+            className="hidden px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-200 text-xs font-medium transition sm:block"
           >
             Calendar tutorial
           </a>
@@ -1547,11 +1547,11 @@ export default function App() {
       {/* ====================================================================
           MAIN WORKSPACE: LEFT/CENTER WEEK GRID + RIGHT FRIENDS SIDEBAR
          ==================================================================== */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-visible md:flex-row md:overflow-hidden">
         {/* ==================================================================
             MAIN WEEK-CENTERED SPLIT-COLUMN CALENDAR VIEWPORT
            ================================================================== */}
-        <main className="flex-1 flex flex-col overflow-hidden bg-[#121212]">
+        <main className="h-[70dvh] min-h-[32rem] flex-none flex flex-col overflow-hidden bg-[#121212] md:h-auto md:min-h-0 md:flex-1">
           {/* Scrollable Wrapper */}
           <div
             ref={calendarScrollRef}
@@ -1564,11 +1564,11 @@ export default function App() {
             onPointerCancel={stopCalendarPan}
           >
             <div
-              className="min-h-full flex flex-col"
+              className="min-h-full min-w-[700px] flex flex-col md:min-w-0"
               style={{
                 minWidth: isHorizontalScrollMode
                   ? `${64 + DAYS_OF_WEEK.length * Math.max(250, activeCalendars.length * 92)}px`
-                  : '100%'
+                  : undefined
               }}
             >
               {/* STICKY DAY HEADERS ROW */}
@@ -1822,7 +1822,7 @@ export default function App() {
         {/* ==================================================================
             RIGHT SIDEBAR: INCOMING REQUESTS + FRIENDS/CALENDARS CHECKLIST
            ================================================================== */}
-        <aside className="w-80 shrink-0 bg-[#171717] border-l border-[#262626] flex flex-col justify-between z-20">
+        <aside className="w-full shrink-0 bg-[#171717] border-t border-[#262626] flex flex-col justify-between z-20 md:w-80 md:border-l md:border-t-0">
           <div className="flex-1 overflow-y-auto p-4 space-y-6">
             {/* 1. INCOMING FRIEND REQUESTS SECTION */}
             <div>
@@ -2152,7 +2152,7 @@ export default function App() {
          ==================================================================== */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-[#1a1a1a] border border-[#2e2e2e] rounded-2xl shadow-2xl overflow-hidden">
+          <div className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#2e2e2e] bg-[#1a1a1a] shadow-2xl">
             <div className="px-5 py-4 border-b border-[#282828] flex items-center justify-between">
               <h3 className="text-sm font-bold text-white">
                 Add to syntgrid
@@ -2470,7 +2470,7 @@ export default function App() {
 
       {isPersonalCalendarEditorOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-4xl max-h-[90vh] bg-[#1a1a1a] border border-[#2e2e2e] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+          <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[#2e2e2e] bg-[#1a1a1a] shadow-2xl">
             <div className="px-5 py-4 border-b border-[#282828] flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-white">Edit your personal calendar</h3>
@@ -2612,7 +2612,7 @@ export default function App() {
          ==================================================================== */}
       {isCodeModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-3xl max-h-[88vh] bg-[#181818] border border-[#2e2e2e] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+          <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[#2e2e2e] bg-[#181818] shadow-2xl">
             <div className="px-6 py-4 border-b border-[#282828] flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-white">

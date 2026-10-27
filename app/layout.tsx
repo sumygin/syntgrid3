@@ -8,6 +8,12 @@ export const metadata = {
   description: 'Upload, edit, and compare personal timetable calendars',
 };
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+};
+
 export default function RootLayout({
   children,
 }: {
