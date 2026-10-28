@@ -1489,6 +1489,25 @@ export default function App() {
     }
   };
 
+  const deleteEvent = async () => {
+    if (!eventDetails) return;
+    setIsSavingEventDetails(true);
+    try {
+      const personalCalendar = calendarsRef.current.find((calendar) => calendar.id === 'cal-me');
+      if (!personalCalendar) throw new Error('Your personal calendar is not available.');
+      const events = personalCalendar.events.filter((calendarEvent) =>
+        calendarEvent.id !== eventDetails.id
+      );
+      await saveOwnCalendarEvents(events);
+      setEventDetails(null);
+      showToast('Event deleted from your personal calendar.');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not delete this event.');
+    } finally {
+      setIsSavingEventDetails(false);
+    }
+  };
+
   // Copy Gemini prompt helper with fallback for permissions policy
   const copyText = async (text: string, key: string) => {
     let copied = false;
@@ -2810,6 +2829,15 @@ export default function App() {
               </label>
             </div>
             <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => void deleteEvent()}
+                disabled={isSavingEventDetails}
+                className="mr-auto flex items-center gap-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs font-medium text-rose-200 hover:bg-rose-500/20 disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete event
+              </button>
               <button
                 type="button"
                 onClick={() => setEventDetails(null)}
