@@ -320,6 +320,16 @@ function saveSelectionCache(accountEmail: string, calendars: CalendarItem[], gro
   } catch (error) {
     console.warn('Could not save calendar selections.', error);
   }
+
+}
+
+function uniqueCalendarEvents(events: CalendarEvent[]): CalendarEvent[] {
+  const seen = new Set<string>();
+  return events.filter((event) => {
+    if (seen.has(event.id)) return false;
+    seen.add(event.id);
+    return true;
+  });
 }
 
 // ============================================================================
@@ -589,7 +599,7 @@ export default function App() {
   const calendarsRef = useRef<CalendarItem[]>([]);
   const eventIdRef = useRef(0);
   const calendarSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const lastEventDropRef = useRef<{ dayIndex: number; week: number; clientX: number; clientY: number; at: number } | null>(null);
+  const eventDropInProgressRef = useRef(false);
   const hasInitialCalendarFocus = useRef(false);
   const hasInitialTodayFocus = useRef(false);
   const [eventDetails, setEventDetails] = useState<CalendarEvent | null>(null);
@@ -753,7 +763,7 @@ export default function App() {
         checked: true,
         isDeletable: false,
         lastSynced: ownData.events.length ? 'Saved personal .ics calendar' : 'Upload your Imperial .ics file',
-        events: ownData.events
+        events: uniqueCalendarEvents(ownData.events)
       };
       const friendsResponse = await fetch('/api/friends', { signal: controller.signal });
       const friendsData = await readApiResponse<{
@@ -1334,18 +1344,19 @@ export default function App() {
   const saveOwnCalendarEvents = useCallback(async (events: CalendarEvent[]) => {
     const currentCalendar = calendarsRef.current.find((calendar) => calendar.id === 'cal-me');
     if (!currentCalendar) throw new Error('Your personal calendar is not available.');
+    const uniqueEvents = uniqueCalendarEvents(events);
     const save = async () => {
       const response = await fetch('/api/calendar', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: currentCalendar.name,
-          ics: eventsToIcs(events, currentCalendar.name),
-          events: events.map((event) => ({ ...event, weekOffset: event.weekOffset ?? 0 }))
+          ics: eventsToIcs(uniqueEvents, currentCalendar.name),
+          events: uniqueEvents.map((event) => ({ ...event, weekOffset: event.weekOffset ?? 0 }))
         })
       });
       await readApiResponse<{ name: string }>(response);
-      updateOwnCalendarEvents(events);
+      updateOwnCalendarEvents(uniqueEvents);
     };
     const queuedSave = calendarSaveQueueRef.current.then(save, save);
     calendarSaveQueueRef.current = queuedSave.catch(() => undefined);
@@ -1362,25 +1373,13 @@ export default function App() {
       showToast('Enable My Calendar before adding an event.');
       return;
     }
-    const now = event.timeStamp;
-    const lastDrop = lastEventDropRef.current;
-    if (
-      lastDrop &&
-      now - lastDrop.at < 750 &&
-      lastDrop.dayIndex === dayIndex &&
-      lastDrop.week === week &&
-      Math.abs(lastDrop.clientX - event.clientX) < 4 &&
-      Math.abs(lastDrop.clientY - event.clientY) < 4
-    ) {
+    if (eventDropInProgressRef.current) {
       return;
     }
-    lastEventDropRef.current = {
-      dayIndex,
-      week,
-      clientX: event.clientX,
-      clientY: event.clientY,
-      at: now
-    };
+    eventDropInProgressRef.current = true;
+    window.setTimeout(() => {
+      eventDropInProgressRef.current = false;
+    }, 750);
     const rect = event.currentTarget.getBoundingClientRect();
     const rawHour = (event.clientY - rect.top) / HOUR_HEIGHT;
     const start = Math.max(0, Math.min(23.75, Math.round(rawHour * 4) / 4));
@@ -1395,7 +1394,7 @@ export default function App() {
       lecturer: '',
       category: 'Personal'
     };
-    const events = [...personalCalendar.events, newEvent];
+    const events = uniqueCalendarEvents([...personalCalendar.events, newEvent]);
     updateOwnCalendarEvents(events);
     setEventDetails(newEvent);
     void saveOwnCalendarEvents(events).catch((error: unknown) => {
