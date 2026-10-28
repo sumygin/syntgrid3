@@ -1343,12 +1343,11 @@ export default function App() {
     updateOwnCalendarEvents(events);
   }, [calendars]);
 
-  const openNewCalendarEvent = (
-    event: React.MouseEvent<HTMLDivElement>,
+  const createCalendarEventAtPosition = (
+    event: React.DragEvent<HTMLDivElement>,
     dayIndex: number,
     week: number
   ) => {
-    event.stopPropagation();
     const personalCalendar = calendars.find((calendar) => calendar.id === 'cal-me');
     if (!personalCalendar?.checked) {
       showToast('Enable My Calendar before adding an event.');
@@ -1371,6 +1370,11 @@ export default function App() {
     const events = [...personalCalendar.events, newEvent];
     updateOwnCalendarEvents(events);
     setEventDetails(newEvent);
+  };
+
+  const startNewEventDrag = (event: React.DragEvent<HTMLButtonElement>) => {
+    event.dataTransfer.setData('application/x-syntgrid-new-event', 'new-event');
+    event.dataTransfer.effectAllowed = 'copy';
   };
 
   const startEventResize = (
@@ -1608,6 +1612,18 @@ export default function App() {
             Today
           </button>
 
+          <button
+            type="button"
+            draggable
+            onDragStart={startNewEventDrag}
+            className="flex cursor-grab items-center gap-1.5 rounded-md border border-emerald-400/40 bg-emerald-400/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-400/20 active:cursor-grabbing"
+            title="Drag onto your personal calendar to create an event"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">New event (drag)</span>
+            <span className="sm:hidden">New event</span>
+          </button>
+
           <div className="flex items-center gap-1">
             <button
               onClick={() => setWeekOffset((w: number) => w - 1)}
@@ -1841,10 +1857,21 @@ export default function App() {
                             <div
                               key={cal.id}
                               className="flex-1 h-full relative border-r border-[#1e1e1e] last:border-r-0"
-                              onDoubleClick={cal.id === 'cal-me'
-                                ? (event) => openNewCalendarEvent(event, day.dayIndex, weekOffset)
+                              onDragOver={cal.id === 'cal-me'
+                                ? (event) => {
+                                    if (event.dataTransfer.types.includes('application/x-syntgrid-new-event')) {
+                                      event.preventDefault();
+                                      event.dataTransfer.dropEffect = 'copy';
+                                    }
+                                  }
                                 : undefined}
-                              title={cal.id === 'cal-me' ? 'Double-click an empty space to add an event' : undefined}
+                              onDrop={cal.id === 'cal-me'
+                                ? (event) => {
+                                    if (!event.dataTransfer.types.includes('application/x-syntgrid-new-event')) return;
+                                    event.preventDefault();
+                                    createCalendarEventAtPosition(event, day.dayIndex, weekOffset);
+                                  }
+                                : undefined}
                             >
                               {positionedEvents.map((ev: PositionedEvent) => {
                                 const topPx = ev.start * HOUR_HEIGHT;
