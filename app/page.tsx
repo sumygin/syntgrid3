@@ -588,6 +588,8 @@ export default function App() {
   const calendarScrollRef = useRef<HTMLDivElement | null>(null);
   const calendarsRef = useRef<CalendarItem[]>([]);
   const eventIdRef = useRef(0);
+  const calendarSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const lastEventDropRef = useRef<{ dayIndex: number; week: number; clientX: number; clientY: number; at: number } | null>(null);
   const hasInitialCalendarFocus = useRef(false);
   const hasInitialTodayFocus = useRef(false);
   const [eventDetails, setEventDetails] = useState<CalendarEvent | null>(null);
@@ -1322,26 +1324,33 @@ export default function App() {
   };
 
   const updateOwnCalendarEvents = (events: CalendarEvent[]) => {
-    setCalendars((previous) => previous.map((calendar) =>
+    const updatedCalendars = calendarsRef.current.map((calendar) =>
       calendar.id === 'cal-me' ? { ...calendar, events } : calendar
-    ));
+    );
+    calendarsRef.current = updatedCalendars;
+    setCalendars(updatedCalendars);
   };
 
   const saveOwnCalendarEvents = useCallback(async (events: CalendarEvent[]) => {
-    const currentCalendar = calendars.find((calendar) => calendar.id === 'cal-me');
+    const currentCalendar = calendarsRef.current.find((calendar) => calendar.id === 'cal-me');
     if (!currentCalendar) throw new Error('Your personal calendar is not available.');
-    const response = await fetch('/api/calendar', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: currentCalendar.name,
-        ics: eventsToIcs(events, currentCalendar.name),
-        events: events.map((event) => ({ ...event, weekOffset: event.weekOffset ?? 0 }))
-      })
-    });
-    await readApiResponse<{ name: string }>(response);
-    updateOwnCalendarEvents(events);
-  }, [calendars]);
+    const save = async () => {
+      const response = await fetch('/api/calendar', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: currentCalendar.name,
+          ics: eventsToIcs(events, currentCalendar.name),
+          events: events.map((event) => ({ ...event, weekOffset: event.weekOffset ?? 0 }))
+        })
+      });
+      await readApiResponse<{ name: string }>(response);
+      updateOwnCalendarEvents(events);
+    };
+    const queuedSave = calendarSaveQueueRef.current.then(save, save);
+    calendarSaveQueueRef.current = queuedSave.catch(() => undefined);
+    return queuedSave;
+  }, []);
 
   const createCalendarEventAtPosition = (
     event: React.DragEvent<HTMLDivElement>,
@@ -1353,6 +1362,25 @@ export default function App() {
       showToast('Enable My Calendar before adding an event.');
       return;
     }
+    const now = event.timeStamp;
+    const lastDrop = lastEventDropRef.current;
+    if (
+      lastDrop &&
+      now - lastDrop.at < 750 &&
+      lastDrop.dayIndex === dayIndex &&
+      lastDrop.week === week &&
+      Math.abs(lastDrop.clientX - event.clientX) < 4 &&
+      Math.abs(lastDrop.clientY - event.clientY) < 4
+    ) {
+      return;
+    }
+    lastEventDropRef.current = {
+      dayIndex,
+      week,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      at: now
+    };
     const rect = event.currentTarget.getBoundingClientRect();
     const rawHour = (event.clientY - rect.top) / HOUR_HEIGHT;
     const start = Math.max(0, Math.min(23.75, Math.round(rawHour * 4) / 4));
@@ -1370,6 +1398,9 @@ export default function App() {
     const events = [...personalCalendar.events, newEvent];
     updateOwnCalendarEvents(events);
     setEventDetails(newEvent);
+    void saveOwnCalendarEvents(events).catch((error: unknown) => {
+      showToast(error instanceof Error ? error.message : 'Could not save the new event.');
+    });
   };
 
   const startNewEventDrag = (event: React.DragEvent<HTMLButtonElement>) => {
@@ -1443,7 +1474,7 @@ export default function App() {
     if (!eventDetails) return;
     setIsSavingEventDetails(true);
     try {
-      const personalCalendar = calendars.find((calendar) => calendar.id === 'cal-me');
+      const personalCalendar = calendarsRef.current.find((calendar) => calendar.id === 'cal-me');
       if (!personalCalendar) throw new Error('Your personal calendar is not available.');
       const events = personalCalendar.events.map((calendarEvent) =>
         calendarEvent.id === eventDetails.id ? eventDetails : calendarEvent
