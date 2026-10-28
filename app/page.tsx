@@ -1340,7 +1340,6 @@ export default function App() {
     dayIndex: number,
     week: number
   ) => {
-    if (event.target !== event.currentTarget || event.detail !== 2) return;
     event.stopPropagation();
     const personalCalendar = calendars.find((calendar) => calendar.id === 'cal-me');
     if (!personalCalendar?.checked) {
@@ -1834,7 +1833,10 @@ export default function App() {
                             <div
                               key={cal.id}
                               className="flex-1 h-full relative border-r border-[#1e1e1e] last:border-r-0"
-                              onDoubleClick={(event) => openNewCalendarEvent(event, day.dayIndex, weekOffset)}
+                              onDoubleClick={cal.id === 'cal-me'
+                                ? (event) => openNewCalendarEvent(event, day.dayIndex, weekOffset)
+                                : undefined}
+                              title={cal.id === 'cal-me' ? 'Double-click an empty space to add an event' : undefined}
                             >
                               {positionedEvents.map((ev: PositionedEvent) => {
                                 const topPx = ev.start * HOUR_HEIGHT;
