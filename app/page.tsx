@@ -922,6 +922,14 @@ export default function App() {
   };
 
   const startCalendarPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.detail > 1) {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      calendarPanRef.current = null;
+      setIsPanningCalendar(false);
+      return;
+    }
     if (event.button !== 0 || event.target instanceof Element &&
       event.target.closest('button, a, input, select, textarea, [role="button"], [data-calendar-event]')) {
       return;
