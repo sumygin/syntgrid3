@@ -534,7 +534,6 @@ export default function App() {
   const calendarPanRef = useRef<CalendarPanState | null>(null);
   const calendarScrollRef = useRef<HTMLDivElement | null>(null);
   const calendarsRef = useRef<CalendarItem[]>([]);
-  const eventIdRef = useRef(0);
   const calendarSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const eventDropInProgressRef = useRef(false);
   const hasInitialCalendarFocus = useRef(false);
@@ -1323,7 +1322,7 @@ export default function App() {
     const rawHour = (event.clientY - rect.top) / HOUR_HEIGHT;
     const start = Math.max(0, Math.min(23.75, Math.round(rawHour * 4) / 4));
     const newEvent: CalendarEvent = {
-      id: `event-new-${eventIdRef.current++}`,
+      id: `event-${crypto.randomUUID()}`,
       dayIndex,
       weekOffset: week,
       start,

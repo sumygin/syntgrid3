@@ -226,28 +226,29 @@ export async function PATCH(request: Request) {
       select: { calendarEvents: true }
     });
     const currentEvents = Array.isArray(user?.calendarEvents)
-      ? user.calendarEvents.flatMap((value) => {
-          if (!value || typeof value !== "object" || Array.isArray(value)) return [];
-          const candidate = {
-            ...(value as Record<string, unknown>),
-            weekOffset: Number.isInteger((value as Record<string, unknown>).weekOffset)
-              ? (value as Record<string, unknown>).weekOffset
-              : 0,
-          };
-          return isCalendarEvent(candidate) ? [candidate as Prisma.InputJsonObject] : [];
-        })
+      ? user.calendarEvents.filter(
+          (value): value is Prisma.JsonObject =>
+            Boolean(value && typeof value === "object" && !Array.isArray(value))
+        )
       : [];
     const eventId = (event as { id: string }).id;
-    const existingIndex = currentEvents.findIndex((item) => item.id === eventId);
+    const existingIndex = currentEvents.findIndex((item) =>
+      typeof item.id === "string" && item.id === eventId
+    );
     let events = currentEvents;
 
     if (action === "create") {
-      if (existingIndex === -1) events = [...currentEvents, event];
+      if (existingIndex !== -1) {
+        return NextResponse.json({ error: "An event with this id already exists." }, { status: 409 });
+      }
+      events = [...currentEvents, event as Prisma.JsonObject];
     } else if (action === "update") {
       if (existingIndex === -1) {
         return NextResponse.json({ error: "The event no longer exists." }, { status: 409 });
       }
-      events = currentEvents.map((item, index) => index === existingIndex ? event : item);
+      events = currentEvents.map((item, index) =>
+        index === existingIndex ? event as Prisma.JsonObject : item
+      );
     } else {
       events = currentEvents.filter((item) => item.id !== eventId);
     }
