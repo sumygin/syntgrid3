@@ -192,3 +192,72 @@ export async function PUT(request: Request) {
 
   return NextResponse.json({ name: name.trim() });
 }
+
+export async function PATCH(request: Request) {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) {
+    return NextResponse.json({ error: "Sign in is required." }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
+  }
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Calendar operation is required." }, { status: 400 });
+  }
+
+  const { action, event } = body as Record<string, unknown>;
+  if (action !== "create" && action !== "update" && action !== "delete") {
+    return NextResponse.json({ error: "Unsupported calendar operation." }, { status: 400 });
+  }
+  if (!event || typeof event !== "object" || typeof (event as Record<string, unknown>).id !== "string") {
+    return NextResponse.json({ error: "A calendar event with an id is required." }, { status: 400 });
+  }
+  if (action !== "delete" && !isCalendarEvent(event)) {
+    return NextResponse.json({ error: `Calendar event is invalid: ${getCalendarEventError(event)}.` }, { status: 400 });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email: currentUser.email },
+      select: { calendarEvents: true }
+    });
+    const currentEvents = Array.isArray(user?.calendarEvents)
+      ? user.calendarEvents.flatMap((value) => {
+          if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+          const candidate = {
+            ...(value as Record<string, unknown>),
+            weekOffset: Number.isInteger((value as Record<string, unknown>).weekOffset)
+              ? (value as Record<string, unknown>).weekOffset
+              : 0,
+          };
+          return isCalendarEvent(candidate) ? [candidate as Prisma.InputJsonObject] : [];
+        })
+      : [];
+    const eventId = (event as { id: string }).id;
+    const existingIndex = currentEvents.findIndex((item) => item.id === eventId);
+    let events = currentEvents;
+
+    if (action === "create") {
+      if (existingIndex === -1) events = [...currentEvents, event];
+    } else if (action === "update") {
+      if (existingIndex === -1) {
+        return NextResponse.json({ error: "The event no longer exists." }, { status: 409 });
+      }
+      events = currentEvents.map((item, index) => index === existingIndex ? event : item);
+    } else {
+      events = currentEvents.filter((item) => item.id !== eventId);
+    }
+
+    await prisma.user.update({
+      where: { email: currentUser.email },
+      data: { calendarEvents: events }
+    });
+    return NextResponse.json({ events });
+  } catch (error) {
+    return getDatabaseFailureResponse(error, "save");
+  }
+}

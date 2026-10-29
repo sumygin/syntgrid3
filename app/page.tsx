@@ -512,70 +512,6 @@ function parseCalendarFileContent(content: string, filename?: string): ImportedC
   return events;
 }
 
-function escapeIcsText(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
-}
-
-function foldIcsLine(line: string): string {
-  const encoder = new TextEncoder();
-  const chunks: string[] = [];
-  let current = '';
-  let byteLength = 0;
-  for (const character of line) {
-    const characterLength = encoder.encode(character).length;
-    if (byteLength + characterLength > 75) {
-      chunks.push(current);
-      current = ` ${character}`;
-      byteLength = characterLength + 1;
-    } else {
-      current += character;
-      byteLength += characterLength;
-    }
-  }
-  chunks.push(current);
-  return chunks.join('\r\n');
-}
-
-function eventsToIcs(events: CalendarEvent[], calendarName: string): string {
-  const formatLocalDateTime = (dayTimestamp: number, hour: number) => {
-    const date = new Date(dayTimestamp + hour * 3_600_000);
-    return [
-      date.getUTCFullYear(),
-      String(date.getUTCMonth() + 1).padStart(2, '0'),
-      String(date.getUTCDate()).padStart(2, '0'),
-      'T',
-      String(date.getUTCHours()).padStart(2, '0'),
-      String(date.getUTCMinutes()).padStart(2, '0'),
-      '00'
-    ].join('');
-  };
-  const lines = events.flatMap((event, index) => {
-    const dayTimestamp =
-      BASE_WEEK_START_UTC +
-      ((event.weekOffset ?? 0) * 7 + event.dayIndex) * 86_400_000;
-    return [
-      'BEGIN:VEVENT',
-      `UID:${escapeIcsText(event.id || `syntgrid-${index}`)}@syntgrid`,
-      `DTSTART;TZID=Europe/London:${formatLocalDateTime(dayTimestamp, event.start)}`,
-      `DTEND;TZID=Europe/London:${formatLocalDateTime(dayTimestamp, event.end)}`,
-      `SUMMARY:${escapeIcsText(event.title)}`,
-      `LOCATION:${escapeIcsText(event.location)}`,
-      `DESCRIPTION:${escapeIcsText(event.lecturer)}`,
-      'END:VEVENT'
-    ];
-  });
-  return [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//syntgrid//Personal Calendar//EN',
-    `X-WR-CALNAME:${escapeIcsText(calendarName)}`,
-    ...lines,
-    'END:VCALENDAR',
-    ''
-  ].map(foldIcsLine).join('\r\n');
-}
-
-
 export default function App() {
   // Auth state
   const { data: session, status } = useSession();
@@ -593,6 +529,7 @@ export default function App() {
   const [draggingFriendEmail, setDraggingFriendEmail] = useState<string | null>(null);
   const [isPersonalCalendarEditorOpen, setIsPersonalCalendarEditorOpen] = useState(false);
   const [editingPersonalEvents, setEditingPersonalEvents] = useState<CalendarEvent[]>([]);
+  const [originalPersonalEvents, setOriginalPersonalEvents] = useState<CalendarEvent[]>([]);
   const [isSavingPersonalCalendar, setIsSavingPersonalCalendar] = useState(false);
   const calendarPanRef = useRef<CalendarPanState | null>(null);
   const calendarScrollRef = useRef<HTMLDivElement | null>(null);
@@ -1304,26 +1241,25 @@ export default function App() {
   };
 
   const savePersonalCalendarEdits = async () => {
-    const currentCalendar = calendars.find((calendar) => calendar.id === 'cal-me');
-    if (!currentCalendar) return;
+    if (!calendarsRef.current.some((calendar) => calendar.id === 'cal-me')) return;
     setIsSavingPersonalCalendar(true);
     try {
-      const events = editingPersonalEvents.map((event) => ({
-        ...event,
-        weekOffset: event.weekOffset ?? 0
-      }));
-      const ics = eventsToIcs(events, currentCalendar.name);
-      const response = await fetch('/api/calendar', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: currentCalendar.name, ics, events })
-      });
-      const result = await readApiResponse<{ name: string }>(response);
-      setCalendars((previous) => previous.map((calendar) =>
-        calendar.id === 'cal-me'
-          ? { ...calendar, name: result.name, events, lastSynced: 'Saved personal .ics calendar' }
-          : calendar
-      ));
+      const originalById = new Map(originalPersonalEvents.map((event) => [event.id, event]));
+      const editedIds = new Set(editingPersonalEvents.map((event) => event.id));
+      for (const event of editingPersonalEvents) {
+        const original = originalById.get(event.id);
+        const normalizedEvent = { ...event, weekOffset: event.weekOffset ?? 0 };
+        if (!original) {
+          await patchOwnCalendarEvent('create', normalizedEvent);
+        } else if (JSON.stringify(original) !== JSON.stringify(normalizedEvent)) {
+          await patchOwnCalendarEvent('update', normalizedEvent);
+        }
+      }
+      for (const event of originalPersonalEvents) {
+        if (!editedIds.has(event.id)) {
+          await patchOwnCalendarEvent('delete', event);
+        }
+      }
       setIsPersonalCalendarEditorOpen(false);
       showToast('Your calendar edits are saved and shared with accepted friends.');
     } catch (error) {
@@ -1341,24 +1277,27 @@ export default function App() {
     setCalendars(updatedCalendars);
   };
 
-  const saveOwnCalendarEvents = useCallback(async (events: CalendarEvent[]) => {
-    const currentCalendar = calendarsRef.current.find((calendar) => calendar.id === 'cal-me');
-    if (!currentCalendar) throw new Error('Your personal calendar is not available.');
-    const uniqueEvents = uniqueCalendarEvents(events);
-    const save = async () => {
+  const patchOwnCalendarEvent = useCallback(async (
+    action: 'create' | 'update' | 'delete',
+    event: CalendarEvent
+  ) => {
+    const queuedSave = calendarSaveQueueRef.current.then(async () => {
       const response = await fetch('/api/calendar', {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: currentCalendar.name,
-          ics: eventsToIcs(uniqueEvents, currentCalendar.name),
-          events: uniqueEvents.map((event) => ({ ...event, weekOffset: event.weekOffset ?? 0 }))
-        })
+        body: JSON.stringify({ action, event })
       });
-      await readApiResponse<{ name: string }>(response);
-      updateOwnCalendarEvents(uniqueEvents);
-    };
-    const queuedSave = calendarSaveQueueRef.current.then(save, save);
+      const result = await readApiResponse<{ events: CalendarEvent[] }>(response);
+      updateOwnCalendarEvents(uniqueCalendarEvents(result.events));
+    }, async () => {
+      const response = await fetch('/api/calendar', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, event })
+      });
+      const result = await readApiResponse<{ events: CalendarEvent[] }>(response);
+      updateOwnCalendarEvents(uniqueCalendarEvents(result.events));
+    });
     calendarSaveQueueRef.current = queuedSave.catch(() => undefined);
     return queuedSave;
   }, []);
@@ -1368,7 +1307,7 @@ export default function App() {
     dayIndex: number,
     week: number
   ) => {
-    const personalCalendar = calendars.find((calendar) => calendar.id === 'cal-me');
+    const personalCalendar = calendarsRef.current.find((calendar) => calendar.id === 'cal-me');
     if (!personalCalendar?.checked) {
       showToast('Enable My Calendar before adding an event.');
       return;
@@ -1397,7 +1336,7 @@ export default function App() {
     const events = uniqueCalendarEvents([...personalCalendar.events, newEvent]);
     updateOwnCalendarEvents(events);
     setEventDetails(newEvent);
-    void saveOwnCalendarEvents(events).catch((error: unknown) => {
+    void patchOwnCalendarEvent('create', newEvent).catch((error: unknown) => {
       showToast(error instanceof Error ? error.message : 'Could not save the new event.');
     });
   };
@@ -1433,24 +1372,22 @@ export default function App() {
       const nextValue = Math.max(0, Math.min(24, (eventResize.edge === 'start'
         ? eventResize.originalStart + delta
         : eventResize.originalEnd + delta)));
-      setCalendars((previous) => previous.map((calendar) => {
-        if (calendar.id !== 'cal-me') return calendar;
-        return {
-          ...calendar,
-          events: calendar.events.map((calendarEvent) => {
-            if (calendarEvent.id !== eventResize.eventId) return calendarEvent;
-            if (eventResize.edge === 'start') {
-              return { ...calendarEvent, start: Math.min(nextValue, calendarEvent.end - 0.25) };
-            }
-            return { ...calendarEvent, end: Math.max(nextValue, calendarEvent.start + 0.25) };
-          })
-        };
-      }));
+      const personalCalendar = calendarsRef.current.find((calendar) => calendar.id === 'cal-me');
+      if (!personalCalendar) return;
+      const events = personalCalendar.events.map((calendarEvent) => {
+        if (calendarEvent.id !== eventResize.eventId) return calendarEvent;
+        if (eventResize.edge === 'start') {
+          return { ...calendarEvent, start: Math.min(nextValue, calendarEvent.end - 0.25) };
+        }
+        return { ...calendarEvent, end: Math.max(nextValue, calendarEvent.start + 0.25) };
+      });
+      updateOwnCalendarEvents(events);
     };
     const handlePointerUp = () => {
       const personalCalendar = calendarsRef.current.find((calendar) => calendar.id === 'cal-me');
-      if (personalCalendar) {
-        void saveOwnCalendarEvents(personalCalendar.events).catch((error: unknown) => {
+      const resizedEvent = personalCalendar?.events.find((event) => event.id === eventResize.eventId);
+      if (resizedEvent) {
+        void patchOwnCalendarEvent('update', resizedEvent).catch((error: unknown) => {
           showToast(error instanceof Error ? error.message : 'Could not save the resized event.');
         });
       }
@@ -1462,7 +1399,7 @@ export default function App() {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [eventResize, saveOwnCalendarEvents]);
+  }, [eventResize, patchOwnCalendarEvent]);
 
   useEffect(() => {
     calendarsRef.current = calendars;
@@ -1475,10 +1412,7 @@ export default function App() {
     try {
       const personalCalendar = calendarsRef.current.find((calendar) => calendar.id === 'cal-me');
       if (!personalCalendar) throw new Error('Your personal calendar is not available.');
-      const events = personalCalendar.events.map((calendarEvent) =>
-        calendarEvent.id === eventDetails.id ? eventDetails : calendarEvent
-      );
-      await saveOwnCalendarEvents(events);
+      await patchOwnCalendarEvent('update', eventDetails);
       setEventDetails(null);
       showToast('Event saved to your personal calendar.');
     } catch (error) {
@@ -1494,10 +1428,7 @@ export default function App() {
     try {
       const personalCalendar = calendarsRef.current.find((calendar) => calendar.id === 'cal-me');
       if (!personalCalendar) throw new Error('Your personal calendar is not available.');
-      const events = personalCalendar.events.filter((calendarEvent) =>
-        calendarEvent.id !== eventDetails.id
-      );
-      await saveOwnCalendarEvents(events);
+      await patchOwnCalendarEvent('delete', eventDetails);
       setEventDetails(null);
       showToast('Event deleted from your personal calendar.');
     } catch (error) {
@@ -2281,6 +2212,7 @@ export default function App() {
                         onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                           e.stopPropagation();
                           setEditingPersonalEvents(cal.events.map((event) => ({ ...event })));
+                          setOriginalPersonalEvents(cal.events.map((event) => ({ ...event })));
                           setIsPersonalCalendarEditorOpen(true);
                         }}
                         className="p-1.5 rounded-lg opacity-60 group-hover:opacity-100 hover:bg-sky-500/20 text-zinc-400 hover:text-sky-200 transition cursor-pointer shrink-0"
