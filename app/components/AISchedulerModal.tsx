@@ -85,6 +85,7 @@ Rules:
 - Use ISO-8601 timestamps with timezone offsets.
 - endTime must be after startTime.
 - Keep events inside ${formatWeekRange(weekStartIso)}.
+- Events must start and end on the same calendar date; do not cross midnight.
 - Never overlap the occupied events below.
 - Categories can be STUDY, SLEEP, MEAL, GYM, or PERSONAL.
 
