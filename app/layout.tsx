@@ -4,13 +4,13 @@ import Providers from './providers';
 import { Analytics } from "@vercel/analytics/next"
 
 export const metadata = {
-  title: 'SyntGrid',
+  title: 'syntgrid',
   description: 'Upload, edit, and compare personal timetable calendars',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'SyntGrid',
+    title: 'syntgrid',
   },
 };
 
