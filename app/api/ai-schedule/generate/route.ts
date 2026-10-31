@@ -1,3 +1,4 @@
+import { createGroq } from "@ai-sdk/groq";
 import { createGoogle } from "@ai-sdk/google";
 import { generateText } from "ai";
 import { NextResponse } from "next/server";
@@ -19,17 +20,20 @@ const responseSchema = z.object({
   reasoning: z.string().min(1).max(4_000),
   events: z.array(generatedEventSchema).max(50)
 });
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GEMINI_MODEL = "gemini-3.8-flash";
 
 export async function POST(request: Request) {
   const user = await getAiScheduleUser();
   if (!user) return NextResponse.json({ error: "Sign in is required." }, { status: 401 });
-  const apiKey =
+  const groqApiKey = process.env.GROQ_API_KEY?.trim();
+  const googleApiKey =
     process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() ||
     process.env.GOOGLE_API_KEY?.trim();
-  if (!apiKey) {
-    console.error("[api/ai-schedule/generate] No Google AI API key is configured.");
+  if (!groqApiKey && !googleApiKey) {
+    console.error("[api/ai-schedule/generate] No Groq or Google AI API key is configured.");
     return NextResponse.json(
-      { error: "AI scheduling is not configured. Add GOOGLE_GENERATIVE_AI_API_KEY to the server environment and restart or redeploy." },
+      { error: "AI scheduling is not configured. Add GROQ_API_KEY to the server environment and restart or redeploy." },
       { status: 503 }
     );
   }
@@ -55,10 +59,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Provide a prompt and valid week/current timestamps." }, { status: 400 });
   }
 
-  try {
-    const result = await generateText({
-      model: createGoogle({ apiKey })("gemini-3.8-flash"),
-      system: `You are a strict academic week scheduler. Create a practical schedule for the target seven-day week.
+  const system = `You are a strict academic week scheduler. Create a practical schedule for the target seven-day week.
 Never overlap any occupied slot in the existing schedule, and never overlap events you create.
 Normally schedule within the target week. If the user explicitly requests a contiguous date range that extends beyond it, honor that request up to ${MAX_SCHEDULE_HORIZON_DAYS} days from the target start. Never schedule outside that maximum horizon.
 Use valid ISO-8601 timestamps with timezone offsets, and keep events at least 15 minutes long.
@@ -71,10 +72,32 @@ ${existingScheduleText}
 
 Return ONLY valid JSON with this exact shape:
 {"reasoning":"brief explanation","events":[{"title":"...","description":"...","startTime":"ISO-8601 with timezone offset","endTime":"ISO-8601 with timezone offset","category":"STUDY"}]}
-Do not wrap the JSON in markdown fences.`,
-      prompt: `User scheduling request:
-${prompt}`
+Do not wrap the JSON in markdown fences.`;
+  const requestPrompt = `User scheduling request:
+${prompt}`;
+
+  const generate = (provider: "groq" | "gemini") =>
+    generateText({
+      model: provider === "groq"
+        ? createGroq({ apiKey: groqApiKey! })(GROQ_MODEL)
+        : createGoogle({ apiKey: googleApiKey! })(GEMINI_MODEL),
+      system,
+      prompt: requestPrompt
     });
+
+  try {
+    let result;
+    if (groqApiKey) {
+      try {
+        result = await generate("groq");
+      } catch (groqError) {
+        console.error("[api/ai-schedule/generate] Groq failed; trying Gemini fallback.", groqError);
+        if (!googleApiKey) throw groqError;
+        result = await generate("gemini");
+      }
+    } else {
+      result = await generate("gemini");
+    }
 
     const jsonText = result.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
     let parsedJson: unknown;
@@ -104,10 +127,10 @@ ${prompt}`
       /api key|api_key|authentication|unauthorized|permission|credential/i.test(message);
     const isRateLimitError = /rate limit|quota|resource exhausted|429/i.test(message);
     const errorMessage = isConfigurationError
-      ? "Gemini is not configured correctly on the deployed server. Check GOOGLE_GENERATIVE_AI_API_KEY in Vercel and redeploy."
+      ? "The AI provider is not configured correctly. Check GROQ_API_KEY and GOOGLE_GENERATIVE_AI_API_KEY in Vercel and redeploy."
       : isRateLimitError
-        ? "Gemini is temporarily unavailable because its quota or rate limit was reached. Try again later."
-        : "Gemini could not generate a plan right now. Check the Vercel function logs for the request error and try again.";
+        ? "The AI providers are temporarily unavailable because a quota or rate limit was reached. Try again later."
+        : "The AI providers could not generate a plan right now. Check the server logs and try again.";
     return NextResponse.json(
       {
         error: errorMessage,
