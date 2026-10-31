@@ -1,4 +1,4 @@
-import { google } from "@ai-sdk/google";
+import { createGoogle } from "@ai-sdk/google";
 import { generateObject } from "ai";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -22,10 +22,13 @@ const responseSchema = z.object({
 export async function POST(request: Request) {
   const user = await getAiScheduleUser();
   if (!user) return NextResponse.json({ error: "Sign in is required." }, { status: 401 });
-  if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()) {
-    console.error("[api/ai-schedule/generate] GOOGLE_GENERATIVE_AI_API_KEY is not configured.");
+  const apiKey =
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() ||
+    process.env.GOOGLE_API_KEY?.trim();
+  if (!apiKey) {
+    console.error("[api/ai-schedule/generate] No Google AI API key is configured.");
     return NextResponse.json(
-      { error: "AI scheduling is not configured. Add GOOGLE_GENERATIVE_AI_API_KEY to .env.local and restart the server." },
+      { error: "AI scheduling is not configured. Add GOOGLE_GENERATIVE_AI_API_KEY to the server environment and restart or redeploy." },
       { status: 503 }
     );
   }
@@ -53,7 +56,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await generateObject({
-      model: google("gemini-2.5-flash"),
+      model: createGoogle({ apiKey })("gemini-2.5-flash"),
       schema: responseSchema,
       system: `You are a strict academic week scheduler. Create a practical schedule for the target seven-day week.
 Never overlap any occupied slot in the existing schedule, and never overlap events you create.
@@ -84,7 +87,7 @@ ${existingScheduleText}`,
       /api key|api_key|authentication|unauthorized|permission|credential/i.test(message);
     const isRateLimitError = /rate limit|quota|resource exhausted|429/i.test(message);
     const errorMessage = isConfigurationError
-      ? "Gemini is not configured correctly on the deployed server. Check GOOGLE_GENERATIVE_AI_API_KEY in Vercel."
+      ? "Gemini is not configured correctly on the deployed server. Check GOOGLE_GENERATIVE_AI_API_KEY in Vercel and redeploy."
       : isRateLimitError
         ? "Gemini is temporarily unavailable because its quota or rate limit was reached. Try again later."
         : "Gemini could not generate a plan right now. Check the Vercel function logs for the request error and try again.";
