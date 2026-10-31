@@ -20,6 +20,13 @@ const responseSchema = z.object({
 export async function POST(request: Request) {
   const user = await getAiScheduleUser();
   if (!user) return NextResponse.json({ error: "Sign in is required." }, { status: 401 });
+  if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()) {
+    console.error("[api/ai-schedule/generate] GOOGLE_GENERATIVE_AI_API_KEY is not configured.");
+    return NextResponse.json(
+      { error: "AI scheduling is not configured. Add GOOGLE_GENERATIVE_AI_API_KEY to .env.local and restart the server." },
+      { status: 503 }
+    );
+  }
 
   let body: unknown;
   try {
