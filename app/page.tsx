@@ -198,6 +198,18 @@ const RAINBOW_PALETTE: Palette[] = [
   }
 ];
 
+const AI_CATEGORY_PALETTES: Record<string, Palette> = {
+  STUDY: RAINBOW_PALETTE[4],
+  SLEEP: RAINBOW_PALETTE[5],
+  MEAL: RAINBOW_PALETTE[1],
+  GYM: RAINBOW_PALETTE[3],
+  PERSONAL: RAINBOW_PALETTE[0]
+};
+
+function getEventPalette(event: CalendarEvent, fallback: Palette): Palette {
+  return AI_CATEGORY_PALETTES[event.category.trim().toUpperCase()] ?? fallback;
+}
+
 
 
 // ============================================================================
@@ -1476,7 +1488,7 @@ export default function App() {
       const startHour = start.getUTCHours() + start.getUTCMinutes() / 60;
       const endHour = end.getUTCHours() + end.getUTCMinutes() / 60;
       return {
-        id: `event-${crypto.randomUUID()}`,
+        id: `ai-${crypto.randomUUID()}`,
         dayIndex,
         weekOffset,
         start: startHour,
@@ -1932,6 +1944,7 @@ export default function App() {
                                 const heightPx = (ev.end - ev.start) * HOUR_HEIGHT;
                                 const widthPct = 100 / ev.totalCols;
                                 const leftPct = ev.colIndex * widthPct;
+                                const eventPalette = getEventPalette(ev, cal.palette);
 
                                 const isNarrow =
                                   activeCalendars.length >= 2 && ev.totalCols >= 2;
@@ -1954,7 +1967,7 @@ export default function App() {
                                         ...ev,
                                         ownerName: cal.ownerName || cal.name,
                                         ownerEmail: cal.email,
-                                        palette: cal.palette
+                                        palette: eventPalette
                                       });
                                     }}
                                     onMouseLeave={() => setHoveredEvent(null)}
@@ -1963,9 +1976,9 @@ export default function App() {
                                       height: `${heightPx - 4}px`,
                                       left: `calc(${leftPct}% + 2px)`,
                                       width: `calc(${widthPct}% - 4px)`,
-                                      backgroundColor: cal.palette.bg,
-                                      borderColor: ev.color ?? cal.palette.border,
-                                      color: ev.color ?? cal.palette.text,
+                                      backgroundColor: eventPalette.bg,
+                                      borderColor: ev.color ?? eventPalette.border,
+                                      color: ev.color ?? eventPalette.text,
                                       ...(ev.color ? {
                                         backgroundColor: `${ev.color}2b`
                                       } : {})
@@ -2002,7 +2015,7 @@ export default function App() {
                                       {!isNarrow && heightPx >= 55 && (
                                         <p
                                           className="text-[10px] mt-0.5 truncate font-medium"
-                                          style={{ color: cal.palette.subtext }}
+                                          style={{ color: eventPalette.subtext }}
                                         >
                                           {ev.location}
                                         </p>
@@ -2012,7 +2025,7 @@ export default function App() {
                                     {heightPx >= 64 && (
                                       <div
                                         className="text-[10px] truncate opacity-80 mt-auto pt-0.5"
-                                        style={{ color: cal.palette.subtext }}
+                                        style={{ color: eventPalette.subtext }}
                                       >
                                         {isNarrow ? `${ev.start}:00` : ev.lecturer}
                                       </div>
