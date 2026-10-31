@@ -1,6 +1,7 @@
 'use client';
 
 import { Sparkles, X, Check, Undo2 } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { useState } from 'react';
 
 export type AiEventCategory = 'STUDY' | 'SLEEP' | 'MEAL' | 'GYM' | 'PERSONAL';
@@ -154,9 +155,9 @@ export default function AISchedulerModal({
           <span className="hidden sm:inline">{isUndoing ? 'Undoing…' : 'Undo AI schedule'}</span>
         </button>
       )}
-      {isOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-sm">
-          <aside className="flex h-full w-full max-w-md flex-col border-l border-[#303030] bg-[#171717] shadow-2xl">
+      {isOpen && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-5">
+          <aside className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-[#3b3b3b] bg-[#171717] shadow-2xl sm:max-h-[calc(100dvh-2.5rem)]">
             <div className="flex items-start justify-between border-b border-[#2b2b2b] p-5">
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-fuchsia-300">syntgrid intelligence</p>
@@ -167,7 +168,7 @@ export default function AISchedulerModal({
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex-1 space-y-4 overflow-y-auto p-5">
+            <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
               <label className="block text-xs text-zinc-400">
                 What should I plan?
                 <textarea
@@ -207,7 +208,8 @@ export default function AISchedulerModal({
               )}
             </div>
           </aside>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
