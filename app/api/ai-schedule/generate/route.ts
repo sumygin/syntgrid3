@@ -56,7 +56,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await generateObject({
-      model: createGoogle({ apiKey })("gemini-2.5-flash"),
+      model: createGoogle({ apiKey })("gemini-3.8-flash"),
       schema: responseSchema,
       system: `You are a strict academic week scheduler. Create a practical schedule for the target seven-day week.
 Never overlap any occupied slot in the existing schedule, and never overlap events you create.
