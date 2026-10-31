@@ -11,6 +11,13 @@ const eventSchema = z.object({
   category: z.enum(["STUDY", "SLEEP", "MEAL", "GYM", "PERSONAL"])
 });
 
+const batchColors = ["#38bdf8", "#c084fc", "#fb7185", "#34d399", "#fbbf24", "#2dd4bf", "#818cf8"];
+
+function colorForBatch(batchId: string) {
+  const value = [...batchId].reduce((sum, character) => sum + character.charCodeAt(0), 0);
+  return batchColors[value % batchColors.length];
+}
+
 export async function POST(request: Request) {
   const user = await getAiScheduleUser();
   if (!user) return NextResponse.json({ error: "Sign in is required." }, { status: 401 });
@@ -27,6 +34,7 @@ export async function POST(request: Request) {
   }
 
   const batchId = crypto.randomUUID();
+  const color = colorForBatch(batchId);
   try {
     await prisma.customEvent.createMany({
       data: parsed.data.events.map((event) => ({
@@ -36,7 +44,8 @@ export async function POST(request: Request) {
         description: event.description?.trim() || null,
         startTime: new Date(event.startTime),
         endTime: new Date(event.endTime),
-        category: event.category
+        category: event.category,
+        color
       }))
     });
     const events = await prisma.customEvent.findMany({ where: { userId: user.id, batchId }, orderBy: { startTime: "asc" } });

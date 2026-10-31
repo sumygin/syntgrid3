@@ -39,6 +39,7 @@ export interface CalendarEvent {
   lecturer: string;
   category: string;
   dashed?: boolean;
+  color?: string;
 } 
 
 interface SavedAiEvent extends AiScheduleEvent {
@@ -355,7 +356,8 @@ function aiEventToCalendarEvent(event: AiScheduleEvent, dashed: boolean): Calend
     location: '',
     lecturer: event.description ?? '',
     category: event.category,
-    dashed
+    dashed,
+    color: event.color
   };
 }
 
@@ -2003,8 +2005,11 @@ export default function App() {
                                       left: `calc(${leftPct}% + 2px)`,
                                       width: `calc(${widthPct}% - 4px)`,
                                       backgroundColor: cal.palette.bg,
-                                      borderColor: cal.palette.border,
-                                      color: cal.palette.text
+                                      borderColor: ev.color ?? cal.palette.border,
+                                      color: ev.color ?? cal.palette.text,
+                                      ...(ev.color ? {
+                                        backgroundColor: `${ev.color}2b`
+                                      } : {})
                                     }}
                                     className={`absolute rounded-lg px-2 py-1.5 overflow-hidden transition-all duration-150 cursor-pointer flex flex-col justify-between shadow-sm hover:z-30 hover:brightness-110 ${
                                       ev.dashed

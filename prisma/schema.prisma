@@ -53,6 +53,7 @@ datasource db {
     startTime   DateTime
     endTime     DateTime
     category    String
+    color       String
     createdAt   DateTime @default(now())
 
     @@index([userId])

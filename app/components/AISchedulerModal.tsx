@@ -14,6 +14,7 @@ export interface AiScheduleEvent {
   startTime: string;
   endTime: string;
   category: AiEventCategory;
+  color?: string;
 }
 
 interface AISchedulerModalProps {
@@ -49,6 +50,12 @@ const categoryColors: Record<AiEventCategory, string> = {
   PERSONAL: 'border-rose-400/50 bg-rose-400/10 text-rose-200'
 };
 
+const AI_BATCH_COLORS = ['#38bdf8', '#c084fc', '#fb7185', '#34d399', '#fbbf24', '#2dd4bf', '#818cf8'];
+
+function colorForGeneration(generation: number) {
+  return AI_BATCH_COLORS[generation % AI_BATCH_COLORS.length];
+}
+
 function formatEventTime(value: string) {
   return new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 }
@@ -72,6 +79,7 @@ export default function AISchedulerModal({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCommitting, setIsCommitting] = useState(false);
   const [isUndoing, setIsUndoing] = useState(false);
+  const [generationNumber, setGenerationNumber] = useState(0);
 
   const generate = async () => {
     if (!prompt.trim()) {
@@ -87,7 +95,9 @@ export default function AISchedulerModal({
       });
       const result = await readJson<{ reasoning: string; events: AiScheduleEvent[] }>(response);
       setReasoning(result.reasoning);
-      onStage(result.events);
+      const color = colorForGeneration(generationNumber);
+      onStage(result.events.map((event) => ({ ...event, color })));
+      setGenerationNumber((value) => value + 1);
       showToast(`${result.events.length} event${result.events.length === 1 ? '' : 's'} ready for review.`);
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not generate a schedule.');
