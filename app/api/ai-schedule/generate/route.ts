@@ -4,6 +4,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAiScheduleUser } from "../_auth";
 
+export const maxDuration = 60;
+
 const categorySchema = z.enum(["STUDY", "SLEEP", "MEAL", "GYM", "PERSONAL"]);
 const generatedEventSchema = z.object({
   title: z.string().min(1).max(200),
@@ -77,6 +79,15 @@ ${existingScheduleText}`,
     return NextResponse.json({ reasoning: result.object.reasoning, events });
   } catch (error) {
     console.error("[api/ai-schedule/generate] Generation failed", error);
-    return NextResponse.json({ error: "Could not generate a schedule. Check the AI provider configuration and try again." }, { status: 502 });
+    const message = error instanceof Error ? error.message : "";
+    const isConfigurationError =
+      /api key|api_key|authentication|unauthorized|permission|credential/i.test(message);
+    const isRateLimitError = /rate limit|quota|resource exhausted|429/i.test(message);
+    const errorMessage = isConfigurationError
+      ? "Gemini is not configured correctly on the deployed server. Check GOOGLE_GENERATIVE_AI_API_KEY in Vercel."
+      : isRateLimitError
+        ? "Gemini is temporarily unavailable because its quota or rate limit was reached. Try again later."
+        : "Gemini could not generate a plan right now. Check the Vercel function logs for the request error and try again.";
+    return NextResponse.json({ error: errorMessage }, { status: 503 });
   }
 }
