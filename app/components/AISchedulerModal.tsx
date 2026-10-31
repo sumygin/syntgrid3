@@ -108,7 +108,7 @@ export default function AISchedulerModal({
   useEffect(() => {
     const board = trellisBoards.find((item) => item.id === trellisBoardId);
     if (!board || !trellisToken) return;
-    void fetch(`${trellisUrl}/api/board?name=${encodeURIComponent(board.name)}`, {
+    void fetch(`${trellisUrl}/api/board?id=${encodeURIComponent(board.id)}`, {
       headers: { Authorization: `Bearer ${trellisToken}` }
     }).then(async (response) => {
       if (!response.ok) throw new Error('Could not read the selected Trellis board.');

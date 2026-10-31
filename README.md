@@ -41,6 +41,22 @@ Google and Microsoft are used only to sign in. Users upload the specific Imperia
 account. Calendar data is shared only with accepted friends. The in-app tutorial is at
 `/tutorial`.
 
+## Trellis linking
+
+Set `NEXT_PUBLIC_TRELLIS_URL` to the deployed Trellis origin (for example,
+`https://trellllis.vercel.app`) in local `.env.local` and in the Syntgrid
+Vercel project. The AI scheduler opens Trellis in a popup, receives the
+short-lived Supabase access token in memory, and includes incomplete tasks from
+the selected board in the copied scheduling prompt. The token is never saved
+or included in the prompt.
+
+On the Trellis Vercel project, set `SYNTGRID_ORIGIN` to the exact Syntgrid
+origin (`http://localhost:3000` locally or `https://syntgrid.vercel.app` in
+production). The Trellis Supabase project must have the current
+`trellis/supabase/schema.sql` applied. Configure the desired Supabase Auth
+providers and add the Trellis deployment URL under Authentication > URL
+Configuration.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
