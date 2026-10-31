@@ -1,0 +1,14 @@
+{
+  "name": "SyntGrid",
+  "short_name": "SyntGrid",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#121212",
+  "icons": [
+    {
+      "src": "/syntgrid-icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
