@@ -33,8 +33,8 @@ function parseImportedSchedule(value: unknown): ImportedScheduleEvent[] {
     value && typeof value === 'object' && !Array.isArray(value) && 'events' in value
       ? (value as { events: unknown }).events
       : value;
-  if (!Array.isArray(rawEvents) || rawEvents.length === 0 || rawEvents.length > 50) {
-    throw new Error('Paste a JSON object with 1–50 events in its "events" array.');
+  if (!Array.isArray(rawEvents) || rawEvents.length === 0 || rawEvents.length > 100) {
+    throw new Error('Paste a JSON object with 1–100 events in its "events" array.');
   }
   return rawEvents.map((value, index) => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -82,6 +82,7 @@ Return ONLY valid JSON in this exact format:
 
 Rules:
 - Every event must have title, description, startTime, endTime, and category.
+- Return no more than 100 events.
 - Use ISO-8601 timestamps with timezone offsets.
 - endTime must be after startTime.
 - Keep events inside ${formatWeekRange(weekStartIso)}.
