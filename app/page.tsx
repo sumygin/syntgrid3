@@ -1693,9 +1693,9 @@ export default function App() {
       {/* ====================================================================
           TOP NAVIGATION BAR (Matches your Outlook/Scientia week bar)
          ==================================================================== */}
-      <header className="min-h-14 shrink-0 bg-[#171717] border-b border-[#262626] px-3 py-2 sm:px-4 md:h-14 md:py-0 flex flex-wrap items-center justify-between gap-2 sm:gap-4 z-20">
+      <header className="min-h-14 shrink-0 bg-[#171717] border-b border-[#262626] px-3 py-2 sm:px-4 md:h-14 md:py-0 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2 sm:gap-4 z-20">
         {/* Left: Brand + Week Navigation */}
-        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:gap-4 md:flex-1">
           <div className="flex items-center gap-2.5 pr-3 border-r border-[#2a2a2a]">
             <Image
               src="/syntgrid-icon.png"
@@ -1737,7 +1737,7 @@ export default function App() {
             </button>
           </div>
 
-          <h2 className="min-w-0 truncate font-serif text-sm sm:text-base font-semibold text-zinc-100 tracking-tight">
+          <h2 className="min-w-0 max-w-[calc(100vw-9rem)] truncate font-serif text-sm sm:text-base font-semibold text-zinc-100 tracking-tight sm:max-w-none">
             {dateLabel.format(weekStart)} – {dateLabel.format(weekEnd)}
 
           </h2>
@@ -1754,6 +1754,7 @@ export default function App() {
             <span className="sm:hidden">New event</span>
           </button>
 
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <AISchedulerModal
             weekStartIso={weekStart.toISOString()}
             existingScheduleText={existingScheduleText}
@@ -1764,10 +1765,11 @@ export default function App() {
             onImport={importAiSchedule}
             showToast={showToast}
           />
+          </div>
         </div>
 
         {/* Center/Right: Active Split-Column Mode Pill + Stack Code Guide + User */}
-        <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:gap-2.5">
+        <div className="flex w-full items-center justify-end gap-2 border-t border-[#262626] pt-2 sm:w-auto sm:border-t-0 sm:pt-0 sm:gap-2.5">
           <button
             type="button"
             onClick={() => setIsTutorialOpen(true)}
@@ -1815,7 +1817,7 @@ export default function App() {
         {/* ==================================================================
             MAIN WEEK-CENTERED SPLIT-COLUMN CALENDAR VIEWPORT
            ================================================================== */}
-        <main className="h-[70dvh] min-h-[32rem] flex-none flex flex-col overflow-hidden bg-[#121212] md:h-auto md:min-h-0 md:flex-1">
+        <main className="h-[70dvh] min-h-[28rem] flex-none flex flex-col overflow-hidden bg-[#121212] md:h-auto md:min-h-0 md:flex-1">
           {/* Scrollable Wrapper */}
           <div
             ref={calendarScrollRef}
