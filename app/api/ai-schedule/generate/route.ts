@@ -1,5 +1,5 @@
 import { createGoogle } from "@ai-sdk/google";
-import { generateObject } from "ai";
+import { generateText } from "ai";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAiScheduleUser } from "../_auth";
@@ -55,9 +55,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await generateObject({
+    const result = await generateText({
       model: createGoogle({ apiKey })("gemini-3.8-flash"),
-      schema: responseSchema,
       system: `You are a strict academic week scheduler. Create a practical schedule for the target seven-day week.
 Never overlap any occupied slot in the existing schedule, and never overlap events you create.
 Only schedule within the target week, use valid ISO-8601 timestamps with timezone offsets, and keep events at least 15 minutes long.
@@ -66,11 +65,27 @@ Use STUDY, SLEEP, MEAL, GYM, or PERSONAL categories only.
 Target week starts at ${weekStart.toISOString()} and ends before ${new Date(weekStart.getTime() + 7 * 86_400_000).toISOString()}.
 The current time is ${current.toISOString()}.
 Existing occupied slots (these are hard constraints):
-${existingScheduleText}`,
-      prompt
+${existingScheduleText}
+
+Return ONLY valid JSON with this exact shape:
+{"reasoning":"brief explanation","events":[{"title":"...","description":"...","startTime":"ISO-8601 with timezone offset","endTime":"ISO-8601 with timezone offset","category":"STUDY"}]}
+Do not wrap the JSON in markdown fences.`,
+      prompt: `User scheduling request:
+${prompt}`
     });
 
-    const events = result.object.events.map((event) => ({ ...event, description: event.description || null }));
+    const jsonText = result.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(jsonText);
+    } catch {
+      return NextResponse.json({ error: "Gemini returned an invalid schedule response. Try a more specific request." }, { status: 502 });
+    }
+    const parsedResult = responseSchema.safeParse(parsedJson);
+    if (!parsedResult.success) {
+      return NextResponse.json({ error: "Gemini returned an incomplete schedule response. Try again." }, { status: 502 });
+    }
+    const events = parsedResult.data.events.map((event) => ({ ...event, description: event.description || null }));
     const weekEnd = weekStart.getTime() + 7 * 86_400_000;
     for (const event of events) {
       const start = new Date(event.startTime).getTime();
@@ -79,7 +94,7 @@ ${existingScheduleText}`,
         return NextResponse.json({ error: "The generated plan contained an event outside the target week." }, { status: 502 });
       }
     }
-    return NextResponse.json({ reasoning: result.object.reasoning, events });
+    return NextResponse.json({ reasoning: parsedResult.data.reasoning, events });
   } catch (error) {
     console.error("[api/ai-schedule/generate] Generation failed", error);
     const message = error instanceof Error ? error.message : "";
