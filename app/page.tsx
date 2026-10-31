@@ -929,7 +929,7 @@ export default function App() {
       return;
     }
     if (event.button !== 0 || event.target instanceof Element &&
-      event.target.closest('button, a, input, select, textarea, [role="button"], [data-calendar-event]')) {
+      event.target.closest('button, a, input, select, textarea, [role="button"]')) {
       return;
     }
 
