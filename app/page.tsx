@@ -101,6 +101,10 @@ interface SelectionCache {
   groupActive: Record<string, boolean>;
 }
 
+function getPendingAiScheduleKey(email: string, weekOffset: number): string {
+  return `syntgrid:pending-ai-schedule:${email.toLowerCase()}:${weekOffset}`;
+}
+
 interface CalendarPanState {
   pointerId: number;
   startX: number;
@@ -645,10 +649,10 @@ export default function App() {
   // Status Banner Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
-  };
+  }, []);
 
   useEffect(() => {
     if (status !== 'unauthenticated') return;
@@ -828,7 +832,7 @@ export default function App() {
       if (!controller.signal.aborted) setLoadedAccountEmail(accountEmail);
     });
     return () => controller.abort();
-  }, [session?.user?.email, session?.user?.name, status]);
+  }, [session?.user?.email, session?.user?.name, showToast, status]);
 
   useEffect(() => {
     if (!loadedAccountEmail || calendars.length === 0) return;
@@ -1344,6 +1348,33 @@ export default function App() {
     return queuedSave;
   }, []);
 
+  const flushPendingAiSchedule = useCallback(async (email: string, week: number) => {
+    const key = getPendingAiScheduleKey(email, week);
+    const pending = window.localStorage.getItem(key);
+    if (!pending) return false;
+    const payload = JSON.parse(pending) as { weekOffset: number; events: CalendarEvent[] };
+    const response = await fetch('/api/calendar', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'replace-ai-week', ...payload })
+    });
+    const result = await readApiResponse<{ events: CalendarEvent[] }>(response);
+    window.localStorage.removeItem(key);
+    updateOwnCalendarEvents(uniqueCalendarEvents(result.events));
+    showToast(`Restored ${payload.events.length} pending AI schedule event${payload.events.length === 1 ? '' : 's'}.`);
+    return true;
+  }, [showToast]);
+
+  useEffect(() => {
+    if (!loadedAccountEmail || calendars.length === 0) return;
+    const timeoutId = window.setTimeout(() => {
+      void flushPendingAiSchedule(loadedAccountEmail, weekOffset).catch((error: unknown) => {
+        showToast(error instanceof Error ? `Pending AI schedule was not saved: ${error.message}` : 'Pending AI schedule was not saved.');
+      });
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [calendars.length, flushPendingAiSchedule, loadedAccountEmail, showToast, weekOffset]);
+
   const createCalendarEventAtPosition = (
     event: React.DragEvent<HTMLDivElement>,
     dayIndex: number,
@@ -1441,7 +1472,7 @@ export default function App() {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [eventResize, patchOwnCalendarEvent]);
+  }, [eventResize, patchOwnCalendarEvent, showToast]);
 
   useEffect(() => {
     calendarsRef.current = calendars;
@@ -1529,12 +1560,13 @@ export default function App() {
       );
       if (overlaps) throw new Error(`"${imported.title}" overlaps an existing event.`);
     }
-    for (const event of existingAiEvents) {
-      await patchOwnCalendarEvent('delete', event);
-    }
-    for (const event of importedCalendarEvents) {
-      await patchOwnCalendarEvent('create', event);
-    }
+    if (!loadedAccountEmail) throw new Error('Your account is still loading. Try again in a moment.');
+    const pendingKey = getPendingAiScheduleKey(loadedAccountEmail, weekOffset);
+    window.localStorage.setItem(
+      pendingKey,
+      JSON.stringify({ weekOffset, events: importedCalendarEvents })
+    );
+    await flushPendingAiSchedule(loadedAccountEmail, weekOffset);
     showToast(`Replaced AI schedule with ${importedCalendarEvents.length} event${importedCalendarEvents.length === 1 ? '' : 's'}.`);
   };
 

@@ -210,6 +210,53 @@ export async function PATCH(request: Request) {
   }
 
   const { action, event } = body as Record<string, unknown>;
+  if (action === "replace-ai-week") {
+    const { weekOffset, events } = body as Record<string, unknown>;
+    if (
+      !Number.isInteger(weekOffset) ||
+      Math.abs(Number(weekOffset)) > 10_000 ||
+      !Array.isArray(events) ||
+      events.length > 100
+    ) {
+      return NextResponse.json({ error: "AI schedule replacement is invalid." }, { status: 400 });
+    }
+    const invalidEventIndex = events.findIndex(
+      (value) => !isCalendarEvent(value) || !String((value as Record<string, unknown>).id).startsWith("ai-")
+    );
+    if (invalidEventIndex !== -1) {
+      return NextResponse.json(
+        { error: `AI schedule event ${invalidEventIndex + 1} is invalid.` },
+        { status: 400 }
+      );
+    }
+    try {
+      const user = await prisma.user.findUnique({
+        where: { email: currentUser.email },
+        select: { calendarEvents: true }
+      });
+      const currentEvents = Array.isArray(user?.calendarEvents)
+        ? user.calendarEvents.filter(
+            (value): value is Prisma.JsonObject =>
+              Boolean(value && typeof value === "object" && !Array.isArray(value))
+          )
+        : [];
+      const preservedEvents = currentEvents.filter((value) =>
+        !(
+          typeof value.id === "string" &&
+          value.id.startsWith("ai-") &&
+          value.weekOffset === weekOffset
+        )
+      );
+      const nextEvents = [...preservedEvents, ...(events as Prisma.JsonObject[])];
+      await prisma.user.update({
+        where: { email: currentUser.email },
+        data: { calendarEvents: nextEvents }
+      });
+      return NextResponse.json({ events: nextEvents });
+    } catch (error) {
+      return getDatabaseFailureResponse(error, "save");
+    }
+  }
   if (action !== "create" && action !== "update" && action !== "delete") {
     return NextResponse.json({ error: "Unsupported calendar operation." }, { status: 400 });
   }
