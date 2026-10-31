@@ -1547,22 +1547,6 @@ export default function App() {
         category: event.category
       };
     });
-    const existingAiEvents = personalCalendar.events.filter(
-      (event) => event.id.startsWith('ai-') && (event.weekOffset ?? 0) === weekOffset
-    );
-    const occupied = activeCalendars.flatMap((calendar) => calendar.events).filter(
-      (event) => !existingAiEvents.some((aiEvent) => aiEvent.id === event.id)
-    );
-    for (const imported of importedCalendarEvents) {
-      const overlaps = [...occupied, ...importedCalendarEvents].some((existing) =>
-        existing.id !== imported.id &&
-        existing.dayIndex === imported.dayIndex &&
-        (existing.weekOffset ?? 0) === weekOffset &&
-        imported.start < existing.end &&
-        imported.end > existing.start
-      );
-      if (overlaps) throw new Error(`"${imported.title}" overlaps an existing event.`);
-    }
     if (!loadedAccountEmail) throw new Error('Your account is still loading. Try again in a moment.');
     const pendingKey = getPendingAiScheduleKey(loadedAccountEmail, weekOffset);
     window.localStorage.setItem(

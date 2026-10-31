@@ -234,7 +234,7 @@ Rules:
 - endTime must be after startTime.
 - Keep events inside ${formatWeekRange(weekStartIso)}.
 - Events must start and end on the same calendar date; do not cross midnight.
-- Never overlap the occupied events below.
+- AI events may overlap occupied non-AI events; never delete or replace those non-AI events.
 - Categories can be STUDY, SLEEP, MEAL, GYM, or PERSONAL.
 
 Trellis tasks:
