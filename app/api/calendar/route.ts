@@ -105,7 +105,7 @@ export async function GET() {
   try {
     user = await prisma.user.findUnique({
       where: { email: currentUser.email },
-      select: { calendarName: true, personalCalendarIcs: true, calendarEvents: true },
+      select: { calendarName: true, personalCalendarIcs: true, calendarEvents: true, aiPromptNotes: true },
     });
   } catch (error) {
     return getDatabaseFailureResponse(error, "read");
@@ -116,6 +116,7 @@ export async function GET() {
     ownerName: currentUser.name,
     ics: user?.personalCalendarIcs ?? null,
     events: Array.isArray(user?.calendarEvents) ? user.calendarEvents : [],
+    aiPromptNotes: user?.aiPromptNotes ?? "",
   });
 }
 
@@ -210,6 +211,21 @@ export async function PATCH(request: Request) {
   }
 
   const { action, event } = body as Record<string, unknown>;
+  if (action === "update-ai-prompt-notes") {
+    const notes = (body as Record<string, unknown>).notes;
+    if (typeof notes !== "string" || notes.length > 20_000) {
+      return NextResponse.json({ error: "AI prompt notes must be text under 20,000 characters." }, { status: 400 });
+    }
+    try {
+      await prisma.user.update({
+        where: { email: currentUser.email },
+        data: { aiPromptNotes: notes }
+      });
+      return NextResponse.json({ aiPromptNotes: notes });
+    } catch (error) {
+      return getDatabaseFailureResponse(error, "save");
+    }
+  }
   if (action === "replace-ai-week") {
     const { weekOffset, events } = body as Record<string, unknown>;
     if (

@@ -648,6 +648,7 @@ export default function App() {
 
   // Status Banner Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [savedPromptNotes, setSavedPromptNotes] = useState('');
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -723,6 +724,7 @@ export default function App() {
         name: string;
         ownerName: string;
         events: CalendarEvent[];
+        aiPromptNotes: string;
       }>(ownResponse);
       const ownCalendar: CalendarItem = {
         id: 'cal-me',
@@ -735,6 +737,7 @@ export default function App() {
         lastSynced: ownData.events.length ? 'Saved personal .ics calendar' : 'Upload your Imperial .ics file',
         events: uniqueCalendarEvents(ownData.events)
       };
+      setSavedPromptNotes(ownData.aiPromptNotes ?? '');
       const friendsResponse = await fetch('/api/friends', { signal: controller.signal });
       const friendsData = await readApiResponse<{
         requests: { id: string; email: string; name: string }[];
@@ -1570,6 +1573,16 @@ export default function App() {
     showToast(`Replaced AI schedule with ${importedCalendarEvents.length} event${importedCalendarEvents.length === 1 ? '' : 's'}.`);
   };
 
+  const savePromptNotes = async (notes: string) => {
+    const response = await fetch('/api/calendar', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update-ai-prompt-notes', notes })
+    });
+    await readApiResponse<{ aiPromptNotes: string }>(response);
+    setSavedPromptNotes(notes);
+  };
+
   // Copy Gemini prompt helper with fallback for permissions policy
   const copyText = async (text: string, key: string) => {
     let copied = false;
@@ -1761,6 +1774,8 @@ export default function App() {
             weekStartIso={weekStart.toISOString()}
             existingScheduleText={existingScheduleText}
             existingAiScheduleText={existingAiScheduleText}
+            savedPromptNotes={savedPromptNotes}
+            onSavePromptNotes={savePromptNotes}
             trellisUrl={process.env.NEXT_PUBLIC_TRELLIS_URL || 'https://trellllis.vercel.app'}
             onImport={importAiSchedule}
             showToast={showToast}

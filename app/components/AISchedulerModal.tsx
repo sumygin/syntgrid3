@@ -16,6 +16,8 @@ interface WeekScheduleToolsProps {
   weekStartIso: string;
   existingScheduleText: string;
   existingAiScheduleText: string;
+  savedPromptNotes: string;
+  onSavePromptNotes: (notes: string) => Promise<void>;
   trellisUrl: string;
   onImport: (events: ImportedScheduleEvent[]) => Promise<void>;
   showToast: (message: string) => void;
@@ -69,6 +71,8 @@ export default function AISchedulerModal({
   weekStartIso,
   existingScheduleText,
   existingAiScheduleText,
+  savedPromptNotes,
+  onSavePromptNotes,
   trellisUrl,
   onImport,
   showToast
@@ -77,6 +81,8 @@ export default function AISchedulerModal({
   const [isTrellisOpen, setIsTrellisOpen] = useState(false);
   const [pasteValue, setPasteValue] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [promptNotes, setPromptNotes] = useState(savedPromptNotes);
+  const [isSavingPromptNotes, setIsSavingPromptNotes] = useState(false);
   const [trellisToken, setTrellisToken] = useState<string | null>(null);
   const [trellisBoards, setTrellisBoards] = useState<{ id: string; name: string; role: string }[]>([]);
   const [trellisBoardId, setTrellisBoardId] = useState('');
@@ -239,6 +245,9 @@ Trellis tasks:
 
 ${currentTrellisTasks}
 
+Additional instructions from the user:
+${promptNotes.trim() || 'None provided.'}
+
 Occupied events:
 ${existingScheduleText}
 
@@ -249,6 +258,16 @@ ${existingAiScheduleText}`;
       showToast('Week information and AI output format copied.');
     } catch {
       showToast('Could not copy week information. Check clipboard permissions.');
+    }
+  };
+
+  const savePromptNotes = async () => {
+    setIsSavingPromptNotes(true);
+    try {
+      await onSavePromptNotes(promptNotes);
+      showToast('Extra AI scheduling instructions saved.');
+    } finally {
+      setIsSavingPromptNotes(false);
     }
   };
 
@@ -284,6 +303,22 @@ ${existingAiScheduleText}`;
           <button type="button" onClick={() => void copyWeekInfo()} className="flex items-center gap-1.5 rounded-xl border border-sky-400/40 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-400/20">
             <Clipboard className="h-3.5 w-3.5" /> Copy week info
           </button>
+          <div className="space-y-2">
+            <label htmlFor="ai-prompt-notes" className="text-xs font-semibold text-zinc-200">Extra scheduling instructions</label>
+            <textarea
+              id="ai-prompt-notes"
+              value={promptNotes}
+              onChange={(event) => setPromptNotes(event.target.value)}
+              placeholder="Examples: protect my gym routine; prioritize exam preparation; avoid scheduling before 09:00."
+              maxLength={20000}
+              className="min-h-28 w-full resize-y rounded-xl border border-[#383838] bg-[#111] p-3 text-xs leading-relaxed text-white outline-none focus:border-sky-400"
+            />
+            <div className="flex justify-end">
+              <button type="button" onClick={() => void savePromptNotes()} disabled={isSavingPromptNotes} className="rounded-lg border border-sky-400/40 bg-sky-400/10 px-3 py-1.5 text-xs font-semibold text-sky-200 hover:bg-sky-400/20 disabled:opacity-50">
+                {isSavingPromptNotes ? 'Saving…' : 'Save instructions'}
+              </button>
+            </div>
+          </div>
           <p className="rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs leading-relaxed text-sky-100">
             Paste the copied prompt into your preferred AI model, then paste its JSON response below. The import replaces only AI-generated events; university, friend, and manually created events are preserved. Expected event keys: <code className="font-mono">{eventSchemaKeys}</code>.
           </p>

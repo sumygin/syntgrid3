@@ -15,7 +15,8 @@ datasource db {
     calendarName       String?
     personalCalendarIcs String?
     calendarEvents     Json?
-    customCals          CustomCalendar[]
+    aiPromptNotes      String?
+    customCals         CustomCalendar[]
   }
 
   model Friendship {
