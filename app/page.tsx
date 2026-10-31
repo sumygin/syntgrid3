@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { useSession, signIn, signOut } from 'next-auth/react';
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import AISchedulerModal, { AiScheduleEvent } from './components/AISchedulerModal';
+import AISchedulerModal, { ImportedScheduleEvent } from './components/AISchedulerModal';
 import { serializeSchedule } from '@/lib/serializeSchedule';
 import {
   Calendar as CalendarIcon,
@@ -42,10 +42,6 @@ export interface CalendarEvent {
   color?: string;
 } 
 
-interface SavedAiEvent extends AiScheduleEvent {
-  id: string;
-  batchId: string;
-}
 
 export interface PositionedEvent extends CalendarEvent {
   colIndex: number;
@@ -340,27 +336,6 @@ function uniqueCalendarEvents(events: CalendarEvent[]): CalendarEvent[] {
   });
 }
 
-function aiEventToCalendarEvent(event: AiScheduleEvent, dashed: boolean): CalendarEvent {
-  const start = new Date(event.startTime);
-  const end = new Date(event.endTime);
-  const startDay = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
-  return {
-    id: `ai-${event.id ?? `${event.startTime}-${event.title}`}`,
-    dayIndex: (start.getUTCDay() + 6) % 7,
-    weekOffset: Math.floor((startDay - BASE_WEEK_START_UTC) / (7 * 86_400_000)),
-    start: start.getUTCHours() + start.getUTCMinutes() / 60,
-    end: end.getUTCDate() === start.getUTCDate()
-      ? end.getUTCHours() + end.getUTCMinutes() / 60
-      : 24,
-    title: event.title,
-    location: '',
-    lecturer: event.description ?? '',
-    category: event.category,
-    dashed,
-    color: event.color
-  };
-}
-
 function calendarEventToScheduleEvent(event: CalendarEvent): { title: string; startTime: string; endTime: string } {
   const day = new Date(BASE_WEEK_START_UTC + ((event.weekOffset ?? 0) * 7 + event.dayIndex) * 86_400_000);
   const start = new Date(day.getTime() + event.start * 3_600_000);
@@ -578,10 +553,6 @@ export default function App() {
   const [isSavingEventDetails, setIsSavingEventDetails] = useState(false);
   const [eventResize, setEventResize] = useState<EventResizeState | null>(null);
   const [isPanningCalendar, setIsPanningCalendar] = useState(false);
-  const [committedCustomEvents, setCommittedCustomEvents] = useState<SavedAiEvent[]>([]);
-  const [stagedAiEvents, setStagedAiEvents] = useState<AiScheduleEvent[]>([]);
-  const [undoStack, setUndoStack] = useState<string[]>([]);
-  const [latestAiBatchId, setLatestAiBatchId] = useState<string | null>(null);
 
   // Rest of your state and handlers...
   // Week offset state
@@ -675,22 +646,6 @@ export default function App() {
       });
     return () => controller.abort();
   }, [status]);
-
-  useEffect(() => {
-    if (status !== 'authenticated' || !session?.user?.email) return;
-    const controller = new AbortController();
-    fetch('/api/ai-schedule/events', { signal: controller.signal })
-      .then((response) => readApiResponse<{ events: SavedAiEvent[]; latestBatchId: string | null }>(response))
-      .then((data) => {
-        setCommittedCustomEvents(data.events);
-        setLatestAiBatchId(data.latestBatchId);
-        setUndoStack(data.latestBatchId ? [data.latestBatchId] : []);
-      })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) showToast(error instanceof Error ? error.message : 'Could not load AI schedules.');
-      });
-    return () => controller.abort();
-  }, [session?.user?.email, status]);
 
   useEffect(() => {
     const query = friendEmailInput.trim();
@@ -874,22 +829,10 @@ export default function App() {
     return calendarsWithColors.filter((c) => c.checked);
   }, [calendarsWithColors]);
 
-  const aiCalendarEvents = useMemo(
-    () => [
-      ...committedCustomEvents.map((event) => aiEventToCalendarEvent(event, false)),
-      ...stagedAiEvents.map((event) => aiEventToCalendarEvent(event, true))
-    ],
-    [committedCustomEvents, stagedAiEvents]
-  );
-
   const existingScheduleText = serializeSchedule(
     weekStart.toISOString(),
     activeCalendars.flatMap((calendar) => calendar.events).map(calendarEventToScheduleEvent),
-    committedCustomEvents.map((event) => ({
-      title: event.title,
-      startTime: event.startTime,
-      endTime: event.endTime
-    }))
+    []
   );
 
   useEffect(() => {
@@ -1511,26 +1454,54 @@ export default function App() {
     }
   };
 
-  const handleAiCommit = (batchId: string, events: AiScheduleEvent[]) => {
-    const savedEvents = events
-      .filter((event): event is AiScheduleEvent & { id: string } => typeof event.id === 'string')
-      .map((event) => ({ ...event, batchId }));
-    setCommittedCustomEvents((previous) => [...previous, ...savedEvents]);
-    setStagedAiEvents([]);
-    setUndoStack((previous) => [...previous, batchId]);
-    setLatestAiBatchId(batchId);
-  };
-
-  const handleAiUndo = () => {
-    const batchId = latestAiBatchId ?? undoStack[undoStack.length - 1];
-    if (!batchId) return;
-    setCommittedCustomEvents((events) => events.filter((event) => event.batchId !== batchId));
-    setUndoStack((stack) => stack.filter((item) => item !== batchId));
-    setLatestAiBatchId((previous) => {
-      if (previous !== batchId) return previous;
-      const remaining = undoStack.filter((item) => item !== batchId);
-      return remaining[remaining.length - 1] ?? null;
+  const importAiSchedule = async (importedEvents: ImportedScheduleEvent[]) => {
+    const personalCalendar = calendarsRef.current.find((calendar) => calendar.id === 'cal-me');
+    if (!personalCalendar?.checked) {
+      throw new Error('Enable My Calendar before importing a schedule.');
+    }
+    const weekStartMs = weekStart.getTime();
+    const weekEndMs = weekStartMs + 7 * 86_400_000;
+    const importedCalendarEvents: CalendarEvent[] = importedEvents.map((event) => {
+      const start = new Date(event.startTime);
+      const end = new Date(event.endTime);
+      const startMs = start.getTime();
+      const endMs = end.getTime();
+      if (startMs < weekStartMs || endMs > weekEndMs) {
+        throw new Error('Every imported event must be inside the currently visible week.');
+      }
+      if (start.toISOString().slice(0, 10) !== end.toISOString().slice(0, 10)) {
+        throw new Error('Events cannot cross midnight. Split overnight items into separate daily events.');
+      }
+      const dayIndex = (start.getUTCDay() + 6) % 7;
+      const startHour = start.getUTCHours() + start.getUTCMinutes() / 60;
+      const endHour = end.getUTCHours() + end.getUTCMinutes() / 60;
+      return {
+        id: `event-${crypto.randomUUID()}`,
+        dayIndex,
+        weekOffset,
+        start: startHour,
+        end: endHour,
+        title: event.title,
+        location: '',
+        lecturer: event.description,
+        category: event.category
+      };
     });
+    const occupied = activeCalendars.flatMap((calendar) => calendar.events);
+    for (const imported of importedCalendarEvents) {
+      const overlaps = [...occupied, ...importedCalendarEvents].some((existing) =>
+        existing.id !== imported.id &&
+        existing.dayIndex === imported.dayIndex &&
+        (existing.weekOffset ?? 0) === weekOffset &&
+        imported.start < existing.end &&
+        imported.end > existing.start
+      );
+      if (overlaps) throw new Error(`"${imported.title}" overlaps an existing event.`);
+    }
+    for (const event of importedCalendarEvents) {
+      await patchOwnCalendarEvent('create', event);
+    }
+    showToast(`Imported ${importedCalendarEvents.length} event${importedCalendarEvents.length === 1 ? '' : 's'} into My Calendar.`);
   };
 
   // Copy Gemini prompt helper with fallback for permissions policy
@@ -1701,17 +1672,8 @@ export default function App() {
 
           <AISchedulerModal
             weekStartIso={weekStart.toISOString()}
-            currentIso={currentTime?.toISOString() ?? weekStart.toISOString()}
             existingScheduleText={existingScheduleText}
-            stagedEvents={stagedAiEvents}
-            latestBatchId={latestAiBatchId}
-            hasUndoBatch={undoStack.length > 0 || Boolean(latestAiBatchId)}
-            onStage={setStagedAiEvents}
-            onCommit={handleAiCommit}
-            onDiscard={() => {
-              setStagedAiEvents([]);
-            }}
-            onUndo={handleAiUndo}
+            onImport={importAiSchedule}
             showToast={showToast}
           />
 
@@ -1939,10 +1901,7 @@ export default function App() {
                       ) : (
                         /* Split each Day into parallel vertical slices */
                         activeCalendars.map((cal: CalendarItemWithPalette) => {
-                          const sourceEvents = cal.id === 'cal-me'
-                            ? [...cal.events, ...aiCalendarEvents]
-                            : cal.events;
-                          const dayEvents = sourceEvents.filter(
+                          const dayEvents = cal.events.filter(
                             (ev: CalendarEvent) => ev.dayIndex === day.dayIndex && (ev.weekOffset ?? 0) === weekOffset
                           );
                           const positionedEvents: PositionedEvent[] = layoutEventsInSubcolumn(dayEvents);

@@ -1,155 +1,114 @@
 'use client';
 
-import { Sparkles, X, Check, Undo2 } from 'lucide-react';
-import { createPortal } from 'react-dom';
+import { Clipboard, Download, FileUp, X } from 'lucide-react';
 import { useState } from 'react';
 
-export type AiEventCategory = 'STUDY' | 'SLEEP' | 'MEAL' | 'GYM' | 'PERSONAL';
-
-export interface AiScheduleEvent {
-  id?: string;
-  batchId?: string;
+export interface ImportedScheduleEvent {
   title: string;
-  description: string | null;
+  description: string;
   startTime: string;
   endTime: string;
-  category: AiEventCategory;
-  color?: string;
+  category: string;
 }
 
-interface AISchedulerModalProps {
+interface WeekScheduleToolsProps {
   weekStartIso: string;
-  currentIso: string;
   existingScheduleText: string;
-  stagedEvents: AiScheduleEvent[];
-  latestBatchId: string | null;
-  hasUndoBatch: boolean;
-  onStage: (events: AiScheduleEvent[]) => void;
-  onCommit: (batchId: string, events: AiScheduleEvent[]) => void;
-  onDiscard: () => void;
-  onUndo: () => void;
+  onImport: (events: ImportedScheduleEvent[]) => Promise<void>;
   showToast: (message: string) => void;
 }
 
-async function readJson<T>(response: Response): Promise<T> {
-  const data: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message = data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
-      ? data.error
-      : `Request failed (HTTP ${response.status}).`;
-    throw new Error(message);
-  }
-  return data as T;
-}
-
-const categoryColors: Record<AiEventCategory, string> = {
-  STUDY: 'border-sky-400/50 bg-sky-400/10 text-sky-200',
-  SLEEP: 'border-violet-400/50 bg-violet-400/10 text-violet-200',
-  MEAL: 'border-amber-400/50 bg-amber-400/10 text-amber-200',
-  GYM: 'border-emerald-400/50 bg-emerald-400/10 text-emerald-200',
-  PERSONAL: 'border-rose-400/50 bg-rose-400/10 text-rose-200'
-};
-
-const AI_BATCH_COLORS = ['#38bdf8', '#c084fc', '#fb7185', '#34d399', '#fbbf24', '#2dd4bf', '#818cf8'];
-
-function colorForGeneration(generation: number) {
-  return AI_BATCH_COLORS[generation % AI_BATCH_COLORS.length];
-}
-
-function formatEventTime(value: string) {
-  return new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
-}
+const eventSchemaKeys = '"title","description","startTime","endTime","category"';
 
 function formatWeekRange(weekStartIso: string) {
   const start = new Date(weekStartIso);
   const end = new Date(start.getTime() + 6 * 86_400_000);
-  return `${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(start)}–${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(end)}`;
+  const format = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return `${format.format(start)} to ${format.format(end)}`;
+}
+
+function parseImportedSchedule(value: unknown): ImportedScheduleEvent[] {
+  const rawEvents =
+    value && typeof value === 'object' && !Array.isArray(value) && 'events' in value
+      ? (value as { events: unknown }).events
+      : value;
+  if (!Array.isArray(rawEvents) || rawEvents.length === 0 || rawEvents.length > 50) {
+    throw new Error('Paste a JSON object with 1–50 events in its "events" array.');
+  }
+  return rawEvents.map((value, index) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error(`Event ${index + 1} must be an object.`);
+    }
+    const event = value as Record<string, unknown>;
+    const title = typeof event.title === 'string' ? event.title.trim() : '';
+    const startTime = typeof event.startTime === 'string' ? event.startTime : '';
+    const endTime = typeof event.endTime === 'string' ? event.endTime : '';
+    if (!title || title.length > 200) throw new Error(`Event ${index + 1} needs a title under 200 characters.`);
+    if (Number.isNaN(new Date(startTime).getTime()) || Number.isNaN(new Date(endTime).getTime())) {
+      throw new Error(`Event ${index + 1} has an invalid startTime or endTime.`);
+    }
+    if (new Date(endTime).getTime() <= new Date(startTime).getTime()) {
+      throw new Error(`Event ${index + 1} must end after it starts.`);
+    }
+    return {
+      title,
+      description: typeof event.description === 'string' ? event.description.trim().slice(0, 500) : '',
+      startTime,
+      endTime,
+      category: typeof event.category === 'string' && event.category.trim()
+        ? event.category.trim().slice(0, 40)
+        : 'PERSONAL'
+    };
+  });
 }
 
 export default function AISchedulerModal({
   weekStartIso,
-  currentIso,
   existingScheduleText,
-  stagedEvents,
-  latestBatchId,
-  hasUndoBatch,
-  onStage,
-  onCommit,
-  onDiscard,
-  onUndo,
+  onImport,
   showToast
-}: AISchedulerModalProps) {
+}: WeekScheduleToolsProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [prompt, setPrompt] = useState('');
-  const [reasoning, setReasoning] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isCommitting, setIsCommitting] = useState(false);
-  const [isUndoing, setIsUndoing] = useState(false);
-  const [generationNumber, setGenerationNumber] = useState(0);
+  const [pasteValue, setPasteValue] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
 
-  const generate = async () => {
-    if (!prompt.trim()) {
-      showToast('Describe what you want to schedule first.');
-      return;
-    }
-    setIsGenerating(true);
+  const copyWeekInfo = async () => {
+    const text = `Create a schedule for ${formatWeekRange(weekStartIso)}.
+
+Use only dates within this week. Do not overlap any occupied slot below.
+Return ONLY valid JSON in this exact format:
+{"events":[{"title":"Focused study","description":"Optional short notes","startTime":"2026-10-31T09:00:00+00:00","endTime":"2026-10-31T10:30:00+00:00","category":"STUDY"}]}
+
+Rules:
+- Every event must have title, description, startTime, endTime, and category.
+- Use ISO-8601 timestamps with timezone offsets.
+- endTime must be after startTime.
+- Keep events inside ${formatWeekRange(weekStartIso)}.
+- Never overlap the occupied events below.
+- Categories can be STUDY, SLEEP, MEAL, GYM, or PERSONAL.
+
+Occupied events:
+${existingScheduleText}`;
     try {
-      const response = await fetch('/api/ai-schedule/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, existingScheduleText, weekStartIso, currentIso })
-      });
-      const result = await readJson<{ reasoning: string; events: AiScheduleEvent[] }>(response);
-      setReasoning(result.reasoning);
-      const color = colorForGeneration(generationNumber);
-      onStage(result.events.map((event) => ({ ...event, color })));
-      setGenerationNumber((value) => value + 1);
-      showToast(
-        result.events.length > 0
-          ? `${result.events.length} event${result.events.length === 1 ? '' : 's'} ready for review.`
-          : `No events generated. Request times within ${formatWeekRange(weekStartIso)}.`
-      );
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Could not generate a schedule.');
-    } finally {
-      setIsGenerating(false);
+      await navigator.clipboard.writeText(text);
+      showToast('Week information and AI output format copied.');
+    } catch {
+      showToast('Could not copy week information. Check clipboard permissions.');
     }
   };
 
-  const commit = async () => {
-    setIsCommitting(true);
+  const importSchedule = async () => {
     try {
-      const response = await fetch('/api/ai-schedule/commit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ events: stagedEvents })
-      });
-      const result = await readJson<{ batchId: string; events: AiScheduleEvent[] }>(response);
-      onCommit(result.batchId, result.events);
-      setReasoning('');
-      showToast('AI schedule saved.');
+      const parsed: unknown = JSON.parse(pasteValue);
+      const events = parseImportedSchedule(parsed);
+      setIsImporting(true);
+      await onImport(events);
+      setPasteValue('');
+      setIsOpen(false);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Could not save the schedule.');
+      showToast(error instanceof Error ? error.message : 'Could not import this schedule.');
     } finally {
-      setIsCommitting(false);
-    }
-  };
-
-  const undo = async () => {
-    setIsUndoing(true);
-    try {
-      const response = await fetch('/api/ai-schedule/undo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ batchId: latestBatchId })
-      });
-      await readJson<{ deletedCount: number }>(response);
-      onUndo();
-      showToast('Last AI schedule undone.');
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Could not undo the schedule.');
-    } finally {
-      setIsUndoing(false);
+      setIsImporting(false);
     }
   };
 
@@ -157,87 +116,55 @@ export default function AISchedulerModal({
     <>
       <button
         type="button"
-        onClick={() => setIsOpen(true)}
-        className="flex items-center gap-1.5 rounded-md border border-fuchsia-400/40 bg-fuchsia-400/10 px-2.5 py-1.5 text-xs font-semibold text-fuchsia-200 transition hover:bg-fuchsia-400/20"
+        onClick={() => void copyWeekInfo()}
+        className="flex items-center gap-1.5 rounded-md border border-sky-400/40 bg-sky-400/10 px-2.5 py-1.5 text-xs font-semibold text-sky-200 transition hover:bg-sky-400/20"
       >
-        <Sparkles className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">AI Week Scheduler</span>
-        <span className="sm:hidden">AI plan</span>
+        <Clipboard className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">Copy week info</span>
+        <span className="sm:hidden">Copy week</span>
       </button>
-      {hasUndoBatch && (
-        <button
-          type="button"
-          onClick={() => void undo()}
-          disabled={isUndoing}
-          className="flex items-center gap-1.5 rounded-md border border-zinc-600 bg-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-200 transition hover:bg-zinc-700 disabled:opacity-50"
-        >
-          <Undo2 className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">{isUndoing ? 'Undoing…' : 'Undo AI schedule'}</span>
-        </button>
-      )}
-      {isOpen && createPortal(
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="flex items-center gap-1.5 rounded-md border border-emerald-400/40 bg-emerald-400/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-400/20"
+      >
+        <FileUp className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">Import AI schedule</span>
+        <span className="sm:hidden">Import</span>
+      </button>
+      {isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-5">
-          <aside className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-[#3b3b3b] bg-[#171717] shadow-2xl sm:max-h-[calc(100dvh-2.5rem)]">
+          <div className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[#3b3b3b] bg-[#171717] shadow-2xl sm:max-h-[calc(100dvh-2.5rem)]">
             <div className="flex items-start justify-between border-b border-[#2b2b2b] p-5">
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-fuchsia-300">syntgrid intelligence</p>
-                <h2 className="mt-1 font-serif text-xl font-semibold text-white">Plan your week</h2>
-                <p className="mt-1 text-xs text-zinc-400">Your existing calendars are hard constraints.</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-300">manual AI workflow</p>
+                <h2 className="mt-1 font-serif text-xl font-semibold text-white">Import your schedule</h2>
+                <p className="mt-1 text-xs text-zinc-400">Paste the JSON returned by your AI model for {formatWeekRange(weekStartIso)}.</p>
               </div>
-              <button type="button" onClick={() => setIsOpen(false)} className="rounded-lg p-1.5 text-zinc-400 hover:bg-[#292929] hover:text-white" aria-label="Close AI scheduler">
+              <button type="button" onClick={() => setIsOpen(false)} className="rounded-lg p-1.5 text-zinc-400 hover:bg-[#292929] hover:text-white" aria-label="Close import schedule">
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
-              <label className="block text-xs text-zinc-400">
-                What should I plan?
-                <textarea
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
-                  rows={5}
-                  maxLength={4000}
-                  placeholder="Plan focused study blocks, meals, gym, and a consistent sleep routine around my commitments."
-                  className="mt-1 w-full resize-y rounded-xl border border-[#383838] bg-[#111] px-3 py-2.5 text-sm text-white outline-none focus:border-fuchsia-400"
-                />
-              </label>
-              <button type="button" onClick={() => void generate()} disabled={isGenerating} className="flex w-full items-center justify-center gap-2 rounded-xl bg-fuchsia-400 px-4 py-2.5 text-sm font-bold text-[#171717] transition hover:brightness-110 disabled:opacity-50">
-                <Sparkles className="h-4 w-4" />
-                {isGenerating ? 'Generating plan…' : 'Generate Plan'}
-              </button>
-              {reasoning && <p className="rounded-xl border border-[#343434] bg-[#111] p-3 text-xs leading-relaxed text-zinc-300">{reasoning}</p>}
-              {reasoning && stagedEvents.length === 0 && (
-                <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-3 text-xs leading-relaxed text-amber-100">
-                  <p className="font-semibold">Request events within the planning horizon</p>
-                  <p className="mt-1 text-amber-100/80">
-                    This scheduler is planning {formatWeekRange(weekStartIso)} and can follow an explicitly requested adjacent range. For a longer plan, use the week arrows or split the request into smaller ranges.
-                  </p>
-                </div>
-              )}
-              {stagedEvents.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Preview ({stagedEvents.length})</h3>
-                    <span className="font-mono text-[10px] text-fuchsia-300">GHOST MODE</span>
-                  </div>
-                  {stagedEvents.map((event, index) => (
-                    <div key={`${event.startTime}-${event.title}-${index}`} className={`rounded-xl border p-3 ${categoryColors[event.category]}`}>
-                      <p className="text-sm font-semibold">{event.title}</p>
-                      <p className="mt-1 text-[11px] opacity-80">{formatEventTime(event.startTime)} – {new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(event.endTime))}</p>
-                      {event.description && <p className="mt-1 text-[11px] opacity-70">{event.description}</p>}
-                    </div>
-                  ))}
-                  <div className="flex gap-2 pt-2">
-                    <button type="button" onClick={onDiscard} className="flex-1 rounded-xl border border-[#383838] bg-[#242424] px-3 py-2.5 text-xs font-semibold text-zinc-200 hover:bg-[#2e2e2e]">Discard</button>
-                    <button type="button" onClick={() => void commit()} disabled={isCommitting} className="flex-1 rounded-xl bg-emerald-400 px-3 py-2.5 text-xs font-bold text-[#171717] hover:brightness-110 disabled:opacity-50">
-                      <Check className="mr-1 inline h-3.5 w-3.5" />{isCommitting ? 'Saving…' : 'Accept & Save'}
-                    </button>
-                  </div>
-                </div>
-              )}
+            <div className="space-y-3 overflow-y-auto p-4 sm:p-5">
+              <p className="rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs leading-relaxed text-sky-100">
+                First click <strong>Copy week info</strong>, paste it into your preferred AI model, then paste its JSON response below. Expected event keys: <code className="font-mono">{eventSchemaKeys}</code>.
+              </p>
+              <textarea
+                autoFocus
+                value={pasteValue}
+                onChange={(event) => setPasteValue(event.target.value)}
+                placeholder={'{"events":[{"title":"Study","description":"","startTime":"2026-10-31T09:00:00+00:00","endTime":"2026-10-31T10:30:00+00:00","category":"STUDY"}]}'} 
+                className="min-h-64 w-full resize-y rounded-xl border border-[#383838] bg-[#111] p-3 font-mono text-xs leading-relaxed text-white outline-none focus:border-emerald-400"
+              />
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setIsOpen(false)} className="rounded-xl border border-[#383838] bg-[#242424] px-4 py-2.5 text-xs font-semibold text-zinc-200 hover:bg-[#2e2e2e]">Cancel</button>
+                <button type="button" onClick={() => void importSchedule()} disabled={isImporting || !pasteValue.trim()} className="rounded-xl bg-emerald-400 px-4 py-2.5 text-xs font-bold text-[#171717] hover:brightness-110 disabled:opacity-50">
+                  <Download className="mr-1 inline h-3.5 w-3.5" />{isImporting ? 'Importing…' : 'Import to My Calendar'}
+                </button>
+              </div>
             </div>
-          </aside>
-        </div>,
-        document.body
+          </div>
+        </div>
       )}
     </>
   );
