@@ -7,6 +7,8 @@ import { getAiScheduleUser } from "../_auth";
 
 export const maxDuration = 60;
 const MAX_SCHEDULE_HORIZON_DAYS = 14;
+const MAX_OUTPUT_TOKENS = 900;
+const MAX_SCHEDULE_CONTEXT_LENGTH = 30_000;
 
 const categorySchema = z.enum(["STUDY", "SLEEP", "MEAL", "GYM", "PERSONAL"]);
 const generatedEventSchema = z.object({
@@ -50,7 +52,9 @@ export async function POST(request: Request) {
   const input = body as Record<string, unknown>;
   const prompt = typeof input.prompt === "string" ? input.prompt.trim() : "";
   const existingScheduleText =
-    typeof input.existingScheduleText === "string" ? input.existingScheduleText.slice(0, 100_000) : "";
+    typeof input.existingScheduleText === "string"
+      ? input.existingScheduleText.slice(0, MAX_SCHEDULE_CONTEXT_LENGTH)
+      : "";
   const weekStartIso = typeof input.weekStartIso === "string" ? input.weekStartIso : "";
   const currentIso = typeof input.currentIso === "string" ? input.currentIso : "";
   const weekStart = new Date(weekStartIso);
@@ -81,6 +85,7 @@ ${prompt}`;
       model: provider === "groq"
         ? createGroq({ apiKey: groqApiKey! })(GROQ_MODEL)
         : createGoogle({ apiKey: googleApiKey! })(GEMINI_MODEL),
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
       system,
       prompt: requestPrompt
     });
