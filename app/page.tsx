@@ -229,6 +229,13 @@ const HOURS: number[] = Array.from({ length: 24 }, (_, hour) => hour);
 const HOUR_HEIGHT = 76;
 const BASE_WEEK_START_UTC = Date.UTC(2026, 9, 19);
 
+function formatCalendarTime(hour: number): string {
+  const totalMinutes = Math.max(0, Math.min(24 * 60, Math.round(hour * 60)));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
 
 // ============================================================================
 // HELPER: COMPUTE INTERNAL CLASH SUB-COLUMNS (NO OVERLAPPING / NO STACKING)
@@ -2027,7 +2034,7 @@ export default function App() {
                                         className="text-[10px] truncate opacity-80 mt-auto pt-0.5"
                                         style={{ color: eventPalette.subtext }}
                                       >
-                                        {isNarrow ? `${ev.start}:00` : ev.lecturer}
+                                        {isNarrow ? formatCalendarTime(ev.start) : ev.lecturer}
                                       </div>
                                     )}
                                   </div>
@@ -2372,7 +2379,7 @@ export default function App() {
             </span>
             <span className="text-[11px] font-semibold text-zinc-300 flex items-center gap-1">
               <Clock className="w-3 h-3 text-zinc-400" />
-              {hoveredEvent.start}:00 – {hoveredEvent.end}:00
+              {formatCalendarTime(hoveredEvent.start)} – {formatCalendarTime(hoveredEvent.end)}
             </span>
           </div>
 
