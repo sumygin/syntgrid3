@@ -43,3 +43,18 @@ datasource db {
     sourceIcs  String?
     owner      User     @relation(fields: [ownerId], references: [id])
   }
+
+  model CustomEvent {
+    id          String   @id @default(auto()) @map("_id") @db.ObjectId
+    userId      String   @db.ObjectId
+    batchId     String
+    title       String
+    description String?
+    startTime   DateTime
+    endTime     DateTime
+    category    String
+    createdAt   DateTime @default(now())
+
+    @@index([userId])
+    @@index([batchId])
+  }
