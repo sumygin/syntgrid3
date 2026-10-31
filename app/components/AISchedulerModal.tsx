@@ -2,6 +2,7 @@
 
 import { Clipboard, Download, FileUp, X } from 'lucide-react';
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 export interface ImportedScheduleEvent {
   title: string;
@@ -132,8 +133,8 @@ ${existingScheduleText}`;
         <span className="hidden sm:inline">Import AI schedule</span>
         <span className="sm:hidden">Import</span>
       </button>
-      {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-5">
+      {isOpen && createPortal(
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-5">
           <div className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[#3b3b3b] bg-[#171717] shadow-2xl sm:max-h-[calc(100dvh-2.5rem)]">
             <div className="flex items-start justify-between border-b border-[#2b2b2b] p-5">
               <div>
@@ -164,7 +165,8 @@ ${existingScheduleText}`;
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
