@@ -20,7 +20,7 @@ const responseSchema = z.object({
   reasoning: z.string().min(1).max(4_000),
   events: z.array(generatedEventSchema).max(50)
 });
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GROQ_MODEL = "qwen/qwen3.8-27b";
 const GEMINI_MODEL = "gemini-3.8-flash";
 
 export async function POST(request: Request) {
@@ -85,15 +85,20 @@ ${prompt}`;
       prompt: requestPrompt
     });
 
+  let providerUsed: "groq" | "gemini" = "gemini";
+  let groqFailureMessage: string | null = null;
   try {
     let result;
     if (groqApiKey) {
       try {
         result = await generate("groq");
+        providerUsed = "groq";
       } catch (groqError) {
         console.error("[api/ai-schedule/generate] Groq failed; trying Gemini fallback.", groqError);
+        groqFailureMessage = groqError instanceof Error ? groqError.message : "Groq returned an unknown error.";
         if (!googleApiKey) throw groqError;
         result = await generate("gemini");
+        providerUsed = "gemini";
       }
     } else {
       result = await generate("gemini");
@@ -104,11 +109,11 @@ ${prompt}`;
     try {
       parsedJson = JSON.parse(jsonText);
     } catch {
-      return NextResponse.json({ error: "Gemini returned an invalid schedule response. Try a more specific request." }, { status: 502 });
+      return NextResponse.json({ error: `${providerUsed === "groq" ? "Groq" : "Gemini"} returned an invalid schedule response. Try a more specific request.` }, { status: 502 });
     }
     const parsedResult = responseSchema.safeParse(parsedJson);
     if (!parsedResult.success) {
-      return NextResponse.json({ error: "Gemini returned an incomplete schedule response. Try again." }, { status: 502 });
+      return NextResponse.json({ error: `${providerUsed === "groq" ? "Groq" : "Gemini"} returned an incomplete schedule response. Try again.` }, { status: 502 });
     }
     const events = parsedResult.data.events.map((event) => ({ ...event, description: event.description || null }));
     const weekEnd = weekStart.getTime() + MAX_SCHEDULE_HORIZON_DAYS * 86_400_000;
@@ -135,7 +140,10 @@ ${prompt}`;
       {
         error: errorMessage,
         ...(process.env.NODE_ENV !== "production"
-          ? { details: message.slice(0, 500) || "The provider returned an unknown error." }
+          ? {
+              details: message.slice(0, 500) || "The provider returned an unknown error.",
+              ...(groqFailureMessage ? { groqFailure: groqFailureMessage.slice(0, 500) } : {})
+            }
           : {})
       },
       { status: 503 }
