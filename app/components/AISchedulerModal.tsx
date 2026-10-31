@@ -261,6 +261,52 @@ ${existingAiScheduleText}`;
     }
   };
 
+  const copyEditSchedulePrompt = async () => {
+    let currentTrellisTasks = trellisTasksText;
+    try {
+      currentTrellisTasks = await fetchTrellisTasks();
+      setTrellisTasksText(currentTrellisTasks);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not refresh Trellis tasks.');
+      return;
+    }
+    const text = `Edit my AI-generated schedule for ${formatWeekRange(weekStartIso)}.
+
+After pasting this prompt, I will tell you what changes I want. Apply those requested changes and return ONLY valid JSON in this exact format:
+{"events":[{"title":"Focused study","description":"Optional short notes","startTime":"2026-10-31T09:00:00+00:00","endTime":"2026-10-31T10:30:00+00:00","category":"STUDY"}]}
+
+Rules:
+- Return the complete exhaustive AI-generated schedule after applying my requested edits, not only changed events.
+- You may rewrite, move, split, or delete AI-generated events.
+- Do not delete, overwrite, move, or modify university, friend, or manually created personal events.
+- AI events may overlap non-AI events.
+- Return no more than 100 events.
+- Every event must have title, description, startTime, endTime, and category.
+- Use ISO-8601 timestamps with timezone offsets.
+- endTime must be after startTime.
+- Keep events inside ${formatWeekRange(weekStartIso)}.
+- Events must start and end on the same calendar date; do not cross midnight.
+- Do not schedule completed Trellis tasks.
+- Categories can be STUDY, SLEEP, MEAL, GYM, or PERSONAL.
+
+Current occupied events, which must remain unchanged:
+${existingScheduleText}
+
+Current AI-generated schedule to edit:
+${existingAiScheduleText}
+
+Current relevant Trellis tasks:
+${currentTrellisTasks}
+
+Wait for my requested changes before producing the final JSON.`;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Edit schedule prompt copied.');
+    } catch {
+      showToast('Could not copy the edit prompt. Check clipboard permissions.');
+    }
+  };
+
   const savePromptNotes = async () => {
     setIsSavingPromptNotes(true);
     try {
@@ -300,9 +346,14 @@ ${existingAiScheduleText}`;
           </button>
         </div>
         <div className="space-y-3 overflow-y-auto p-4 sm:p-5">
-          <button type="button" onClick={() => void copyWeekInfo()} className="flex items-center gap-1.5 rounded-xl border border-sky-400/40 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-400/20">
-            <Clipboard className="h-3.5 w-3.5" /> Copy week info
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => void copyWeekInfo()} className="flex items-center gap-1.5 rounded-xl border border-sky-400/40 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-400/20">
+              <Clipboard className="h-3.5 w-3.5" /> Schedule whole week
+            </button>
+            <button type="button" onClick={() => void copyEditSchedulePrompt()} className="flex items-center gap-1.5 rounded-xl border border-violet-400/40 bg-violet-400/10 px-3 py-2 text-xs font-semibold text-violet-200 hover:bg-violet-400/20">
+              <Clipboard className="h-3.5 w-3.5" /> Edit the schedule
+            </button>
+          </div>
           <div className="space-y-2">
             <label htmlFor="ai-prompt-notes" className="text-xs font-semibold text-zinc-200">Extra scheduling instructions</label>
             <textarea
