@@ -60,6 +60,12 @@ function formatEventTime(value: string) {
   return new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 }
 
+function formatWeekRange(weekStartIso: string) {
+  const start = new Date(weekStartIso);
+  const end = new Date(start.getTime() + 6 * 86_400_000);
+  return `${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(start)}–${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(end)}`;
+}
+
 export default function AISchedulerModal({
   weekStartIso,
   currentIso,
@@ -98,7 +104,11 @@ export default function AISchedulerModal({
       const color = colorForGeneration(generationNumber);
       onStage(result.events.map((event) => ({ ...event, color })));
       setGenerationNumber((value) => value + 1);
-      showToast(`${result.events.length} event${result.events.length === 1 ? '' : 's'} ready for review.`);
+      showToast(
+        result.events.length > 0
+          ? `${result.events.length} event${result.events.length === 1 ? '' : 's'} ready for review.`
+          : `No events generated. Request times within ${formatWeekRange(weekStartIso)}.`
+      );
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not generate a schedule.');
     } finally {
@@ -195,6 +205,14 @@ export default function AISchedulerModal({
                 {isGenerating ? 'Generating plan…' : 'Generate Plan'}
               </button>
               {reasoning && <p className="rounded-xl border border-[#343434] bg-[#111] p-3 text-xs leading-relaxed text-zinc-300">{reasoning}</p>}
+              {reasoning && stagedEvents.length === 0 && (
+                <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-3 text-xs leading-relaxed text-amber-100">
+                  <p className="font-semibold">Request events within the active week</p>
+                  <p className="mt-1 text-amber-100/80">
+                    This scheduler is planning {formatWeekRange(weekStartIso)}. Request dates and times inside that range, or use the week arrows to select another week first.
+                  </p>
+                </div>
+              )}
               {stagedEvents.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
