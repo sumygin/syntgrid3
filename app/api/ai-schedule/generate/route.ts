@@ -91,6 +91,14 @@ ${existingScheduleText}`,
       : isRateLimitError
         ? "Gemini is temporarily unavailable because its quota or rate limit was reached. Try again later."
         : "Gemini could not generate a plan right now. Check the Vercel function logs for the request error and try again.";
-    return NextResponse.json({ error: errorMessage }, { status: 503 });
+    return NextResponse.json(
+      {
+        error: errorMessage,
+        ...(process.env.NODE_ENV !== "production"
+          ? { details: message.slice(0, 500) || "The provider returned an unknown error." }
+          : {})
+      },
+      { status: 503 }
+    );
   }
 }
