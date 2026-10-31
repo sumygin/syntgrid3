@@ -51,7 +51,6 @@ const categoryColors: Record<AiEventCategory, string> = {
 };
 
 const AI_BATCH_COLORS = ['#38bdf8', '#c084fc', '#fb7185', '#34d399', '#fbbf24', '#2dd4bf', '#818cf8'];
-const AI_REQUEST_TIMEOUT_MS = 55_000;
 
 function colorForGeneration(generation: number) {
   return AI_BATCH_COLORS[generation % AI_BATCH_COLORS.length];
@@ -94,14 +93,11 @@ export default function AISchedulerModal({
       return;
     }
     setIsGenerating(true);
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
     try {
       const response = await fetch('/api/ai-schedule/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, existingScheduleText, weekStartIso, currentIso }),
-        signal: controller.signal
+        body: JSON.stringify({ prompt, existingScheduleText, weekStartIso, currentIso })
       });
       const result = await readJson<{ reasoning: string; events: AiScheduleEvent[] }>(response);
       setReasoning(result.reasoning);
@@ -114,15 +110,8 @@ export default function AISchedulerModal({
           : `No events generated. Request times within ${formatWeekRange(weekStartIso)}.`
       );
     } catch (error) {
-      showToast(
-        controller.signal.aborted
-          ? 'Schedule generation timed out after 55 seconds. Try a shorter request or generate fewer days at a time.'
-          : error instanceof Error
-            ? error.message
-            : 'Could not generate a schedule.'
-      );
+      showToast(error instanceof Error ? error.message : 'Could not generate a schedule.');
     } finally {
-      window.clearTimeout(timeoutId);
       setIsGenerating(false);
     }
   };
