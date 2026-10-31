@@ -7,20 +7,20 @@ import { getAiScheduleUser } from "../_auth";
 
 export const maxDuration = 60;
 const MAX_SCHEDULE_HORIZON_DAYS = 14;
-const MAX_OUTPUT_TOKENS = 900;
+const MAX_OUTPUT_TOKENS = 950;
 const MAX_SCHEDULE_CONTEXT_LENGTH = 30_000;
 
 const categorySchema = z.enum(["STUDY", "SLEEP", "MEAL", "GYM", "PERSONAL"]);
 const generatedEventSchema = z.object({
   title: z.string().min(1).max(200),
-  description: z.string().max(2_000),
+  description: z.string().max(500),
   startTime: z.string().datetime({ offset: true }),
   endTime: z.string().datetime({ offset: true }),
   category: categorySchema
 });
 const responseSchema = z.object({
-  reasoning: z.string().min(1).max(4_000),
-  events: z.array(generatedEventSchema).max(50)
+  reasoning: z.string().min(1).max(500),
+  events: z.array(generatedEventSchema).max(35)
 });
 const GROQ_MODEL = "qwen/qwen3.8-27b";
 const GEMINI_MODEL = "gemini-3.8-flash";
@@ -74,7 +74,7 @@ The current time is ${current.toISOString()}.
 Existing occupied slots (these are hard constraints):
 ${existingScheduleText}
 
-Return ONLY valid JSON with this exact shape:
+Keep the response compact. Return ONLY minified valid JSON with this exact shape:
 {"reasoning":"brief explanation","events":[{"title":"...","description":"...","startTime":"ISO-8601 with timezone offset","endTime":"ISO-8601 with timezone offset","category":"STUDY"}]}
 Do not wrap the JSON in markdown fences.`;
   const requestPrompt = `User scheduling request:
@@ -109,12 +109,25 @@ ${prompt}`;
       result = await generate("gemini");
     }
 
-    const jsonText = result.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+    const rawText = result.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+    const objectStart = rawText.indexOf("{");
+    const objectEnd = rawText.lastIndexOf("}");
+    const jsonText = objectStart >= 0 && objectEnd > objectStart
+      ? rawText.slice(objectStart, objectEnd + 1)
+      : rawText;
     let parsedJson: unknown;
     try {
       parsedJson = JSON.parse(jsonText);
     } catch {
-      return NextResponse.json({ error: `${providerUsed === "groq" ? "Groq" : "Gemini"} returned an invalid schedule response. Try a more specific request.` }, { status: 502 });
+      return NextResponse.json(
+        {
+          error: `${providerUsed === "groq" ? "Groq" : "Gemini"} returned an invalid schedule response. Try a more specific request.`,
+          ...(process.env.NODE_ENV !== "production"
+            ? { details: `Response was not valid JSON: ${rawText.slice(0, 300)}` }
+            : {})
+        },
+        { status: 502 }
+      );
     }
     const parsedResult = responseSchema.safeParse(parsedJson);
     if (!parsedResult.success) {
