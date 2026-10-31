@@ -1740,6 +1740,7 @@ export default function App() {
             weekStartIso={weekStart.toISOString()}
             existingScheduleText={existingScheduleText}
             existingAiScheduleText={existingAiScheduleText}
+            trellisUrl="https://trellllis.vercel.app"
             onImport={importAiSchedule}
             showToast={showToast}
           />

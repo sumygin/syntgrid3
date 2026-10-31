@@ -1,7 +1,7 @@
 'use client';
 
-import { Clipboard, Download, FileUp, X } from 'lucide-react';
-import { useState } from 'react';
+import { Clipboard, Download, FileUp, Link2, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 export interface ImportedScheduleEvent {
@@ -16,6 +16,7 @@ interface WeekScheduleToolsProps {
   weekStartIso: string;
   existingScheduleText: string;
   existingAiScheduleText: string;
+  trellisUrl: string;
   onImport: (events: ImportedScheduleEvent[]) => Promise<void>;
   showToast: (message: string) => void;
 }
@@ -68,12 +69,69 @@ export default function AISchedulerModal({
   weekStartIso,
   existingScheduleText,
   existingAiScheduleText,
+  trellisUrl,
   onImport,
   showToast
 }: WeekScheduleToolsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [pasteValue, setPasteValue] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [trellisToken, setTrellisToken] = useState<string | null>(null);
+  const [trellisBoards, setTrellisBoards] = useState<{ id: string; name: string; role: string }[]>([]);
+  const [trellisBoardId, setTrellisBoardId] = useState('');
+  const [trellisTasksText, setTrellisTasksText] = useState('No Trellis board linked.');
+  const trellisWindowRef = useRef<Window | null>(null);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent<unknown>) => {
+      if (event.origin !== new URL(trellisUrl).origin || event.source !== trellisWindowRef.current) return;
+      const data = event.data as { type?: string; accessToken?: string };
+      if (data.type === 'TRELLIS_SUPABASE_SESSION' && data.accessToken) setTrellisToken(data.accessToken);
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [trellisUrl]);
+
+  useEffect(() => {
+    if (!trellisToken) return;
+    void fetch(`${trellisUrl}/api/boards`, {
+      headers: { Authorization: `Bearer ${trellisToken}` }
+    }).then(async (response) => {
+      if (!response.ok) throw new Error('Could not read your Trellis boards.');
+      return response.json() as Promise<{ boards: { id: string; name: string; role: string }[] }>;
+    }).then((data) => {
+      setTrellisBoards(data.boards);
+      if (data.boards[0]) setTrellisBoardId(data.boards[0].id);
+    }).catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Could not link Trellis.'));
+  }, [showToast, trellisToken, trellisUrl]);
+
+  useEffect(() => {
+    const board = trellisBoards.find((item) => item.id === trellisBoardId);
+    if (!board || !trellisToken) return;
+    void fetch(`${trellisUrl}/api/board?name=${encodeURIComponent(board.name)}`, {
+      headers: { Authorization: `Bearer ${trellisToken}` }
+    }).then(async (response) => {
+      if (!response.ok) throw new Error('Could not read the selected Trellis board.');
+      return response.json() as Promise<{ l?: { n?: string; c?: { t?: string; d?: string; due?: string; done?: boolean; k?: { t?: string; done?: boolean }[] }[] }[] }>;
+    }).then((data) => {
+      const lines = (data.l ?? []).flatMap((list) =>
+        (list.c ?? []).filter((card) => !card.done).map((card) => {
+          const checklist = (card.k ?? []).filter((item) => !item.done).map((item) => item.t).filter(Boolean);
+          return `- [${list.n ?? 'Unsorted'}] ${card.t ?? 'Untitled'}${card.due ? ` (due ${card.due})` : ''}${card.d ? ` — ${card.d}` : ''}${checklist.length ? `; open checklist: ${checklist.join(', ')}` : ''}`;
+        })
+      );
+      setTrellisTasksText(lines.length ? lines.join('\n') : 'No incomplete tasks on the selected Trellis board.');
+    }).catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Could not read the selected Trellis board.'));
+  }, [showToast, trellisBoardId, trellisBoards, trellisToken, trellisUrl]);
+
+  const linkTrellis = () => {
+    trellisWindowRef.current = window.open(
+      `${trellisUrl}?syntgridOrigin=${encodeURIComponent(window.location.origin)}`,
+      'syntgrid-trellis',
+      'popup,width=1100,height=800'
+    );
+    if (!trellisWindowRef.current) showToast('Allow popups to link Trellis.');
+  };
 
   const copyWeekInfo = async () => {
     const text = `Create a schedule for ${formatWeekRange(weekStartIso)}.
@@ -97,6 +155,14 @@ Rules:
 - Events must start and end on the same calendar date; do not cross midnight.
 - Never overlap the occupied events below.
 - Categories can be STUDY, SLEEP, MEAL, GYM, or PERSONAL.
+
+Trellis tasks:
+- It is not necessary to schedule every Trellis task.
+- Prioritize urgent tasks, tasks due this week, and tasks that genuinely require work this week.
+- If there is spare time, schedule a few lower-priority tasks that would otherwise be put off.
+- Do not schedule completed tasks, and do not let Trellis work displace fixed occupied events.
+
+${trellisTasksText}
 
 Occupied events:
 ${existingScheduleText}
@@ -137,6 +203,25 @@ ${existingAiScheduleText}`;
         <span className="hidden sm:inline">Copy week info</span>
         <span className="sm:hidden">Copy week</span>
       </button>
+      <button
+        type="button"
+        onClick={linkTrellis}
+        className="flex items-center gap-1.5 rounded-md border border-violet-400/40 bg-violet-400/10 px-2.5 py-1.5 text-xs font-semibold text-violet-200 transition hover:bg-violet-400/20"
+      >
+        <Link2 className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">Link Trellis</span>
+        <span className="sm:hidden">Trellis</span>
+      </button>
+      {trellisBoards.length > 0 && (
+        <select
+          value={trellisBoardId}
+          onChange={(event) => setTrellisBoardId(event.target.value)}
+          className="max-w-40 rounded-md border border-violet-400/40 bg-[#171717] px-2 py-1.5 text-xs text-violet-100"
+          aria-label="Trellis board"
+        >
+          {trellisBoards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}
+        </select>
+      )}
       <button
         type="button"
         onClick={() => setIsOpen(true)}
