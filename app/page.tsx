@@ -399,7 +399,7 @@ function parseCalendarFileContent(content: string, filename?: string): ImportedC
         start: numberField('start', 10),
         end: numberField('end', 11),
         title: stringField('title', 'Untitled Session'),
-        location: stringField('location', 'Room TBD'),
+        location: stringField('location', ''),
         lecturer: stringField('lecturer', 'Uploaded Schedule'),
         category: stringField('category', 'Custom')
       };
@@ -498,7 +498,7 @@ function parseCalendarFileContent(content: string, filename?: string): ImportedC
           start: segmentStart,
           end: segmentEnd,
           title: value('SUMMARY') || 'Untitled Session',
-          location: value('LOCATION') || 'Room TBD',
+          location: value('LOCATION'),
           lecturer: value('DESCRIPTION') || 'Imported via .ICS',
           category: 'ICS Import'
         });
@@ -2895,7 +2895,7 @@ export default function App() {
                     start: 9,
                     end: 10,
                     title: 'New event',
-                    location: 'Room TBD',
+                    location: '',
                     lecturer: '',
                     category: 'Personal'
                   }
@@ -3024,7 +3024,7 @@ export async function GET(req: Request, { params }: { params: { friendId: string
   const events = data.value.map((ev: any) => ({
     id: ev.id,
     title: ev.subject,
-    location: ev.location?.displayName || "Room TBD",
+    location: ev.location?.displayName || "",
     start: new Date(ev.start.dateTime).getHours(),
     end: new Date(ev.end.dateTime).getHours(),
     dayIndex: (new Date(ev.start.dateTime).getDay() + 6) % 7
