@@ -1,6 +1,6 @@
 'use client';
 
-import { Clipboard, Download, FileUp, Link2, X } from 'lucide-react';
+import { Clipboard, Download, Link2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -74,6 +74,7 @@ export default function AISchedulerModal({
   showToast
 }: WeekScheduleToolsProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isTrellisOpen, setIsTrellisOpen] = useState(false);
   const [pasteValue, setPasteValue] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [trellisToken, setTrellisToken] = useState<string | null>(null);
@@ -81,12 +82,33 @@ export default function AISchedulerModal({
   const [trellisBoardId, setTrellisBoardId] = useState('');
   const [trellisTasksText, setTrellisTasksText] = useState('No Trellis board linked.');
   const trellisWindowRef = useRef<Window | null>(null);
+  const trellisBoardStorageKey = 'syntgrid:trellis-board';
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const savedBoard = window.localStorage.getItem(trellisBoardStorageKey);
+      if (savedBoard) {
+        try {
+          const parsed = JSON.parse(savedBoard) as { id?: string };
+          if (parsed.id) setTrellisBoardId(parsed.id);
+        } catch {
+          window.localStorage.removeItem(trellisBoardStorageKey);
+        }
+      }
+      const savedToken = window.sessionStorage.getItem('syntgrid:trellis-token');
+      if (savedToken) setTrellisToken(savedToken);
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent<unknown>) => {
       if (event.origin !== new URL(trellisUrl).origin || event.source !== trellisWindowRef.current) return;
       const data = event.data as { type?: string; accessToken?: string };
-      if (data.type === 'TRELLIS_SUPABASE_SESSION' && data.accessToken) setTrellisToken(data.accessToken);
+      if (data.type === 'TRELLIS_SUPABASE_SESSION' && data.accessToken) {
+        window.sessionStorage.setItem('syntgrid:trellis-token', data.accessToken);
+        setTrellisToken(data.accessToken);
+      }
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
@@ -101,9 +123,24 @@ export default function AISchedulerModal({
       return response.json() as Promise<{ boards: { id: string; name: string; role: string }[] }>;
     }).then((data) => {
       setTrellisBoards(data.boards);
-      if (data.boards[0]) setTrellisBoardId(data.boards[0].id);
-    }).catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Could not link Trellis.'));
+      const savedBoard = window.localStorage.getItem(trellisBoardStorageKey);
+      const savedBoardId = savedBoard ? (JSON.parse(savedBoard) as { id?: string }).id : '';
+      const selectedBoard = data.boards.find((board) => board.id === savedBoardId) ?? data.boards[0];
+      if (selectedBoard) {
+        setTrellisBoardId(selectedBoard.id);
+        window.localStorage.setItem(trellisBoardStorageKey, JSON.stringify(selectedBoard));
+      }
+    }).catch((error: unknown) => {
+      window.sessionStorage.removeItem('syntgrid:trellis-token');
+      setTrellisToken(null);
+      showToast(error instanceof Error ? error.message : 'Could not link Trellis.');
+    });
   }, [showToast, trellisToken, trellisUrl]);
+
+  useEffect(() => {
+    const board = trellisBoards.find((item) => item.id === trellisBoardId);
+    if (board) window.localStorage.setItem(trellisBoardStorageKey, JSON.stringify(board));
+  }, [trellisBoardId, trellisBoards]);
 
   useEffect(() => {
     const board = trellisBoards.find((item) => item.id === trellisBoardId);
@@ -125,6 +162,7 @@ export default function AISchedulerModal({
   }, [showToast, trellisBoardId, trellisBoards, trellisToken, trellisUrl]);
 
   const linkTrellis = () => {
+    setIsTrellisOpen(true);
     trellisWindowRef.current = window.open(
       `${trellisUrl}?syntgridOrigin=${encodeURIComponent(window.location.origin)}`,
       'syntgrid-trellis',
@@ -192,80 +230,99 @@ ${existingAiScheduleText}`;
     }
   };
 
+  const schedulerWindow = (
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-5">
+      <div className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[#3b3b3b] bg-[#171717] shadow-2xl sm:max-h-[calc(100dvh-2.5rem)]">
+        <div className="flex items-start justify-between border-b border-[#2b2b2b] p-5">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-300">manual AI workflow</p>
+            <h2 className="mt-1 font-serif text-xl font-semibold text-white">AI scheduler</h2>
+            <p className="mt-1 text-xs text-zinc-400">Copy your week context or import the AI-generated schedule for {formatWeekRange(weekStartIso)}.</p>
+          </div>
+          <button type="button" onClick={() => setIsOpen(false)} className="rounded-lg p-1.5 text-zinc-400 hover:bg-[#292929] hover:text-white" aria-label="Close AI scheduler">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="space-y-3 overflow-y-auto p-4 sm:p-5">
+          <button type="button" onClick={() => void copyWeekInfo()} className="flex items-center gap-1.5 rounded-xl border border-sky-400/40 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-400/20">
+            <Clipboard className="h-3.5 w-3.5" /> Copy week info
+          </button>
+          <p className="rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs leading-relaxed text-sky-100">
+            Paste the copied prompt into your preferred AI model, then paste its JSON response below. The import replaces only AI-generated events; university, friend, and manually created events are preserved. Expected event keys: <code className="font-mono">{eventSchemaKeys}</code>.
+          </p>
+          <textarea
+            autoFocus
+            value={pasteValue}
+            onChange={(event) => setPasteValue(event.target.value)}
+            placeholder={'{"events":[{"title":"Study","description":"","startTime":"2026-10-31T09:00:00+00:00","endTime":"2026-10-31T10:30:00+00:00","category":"STUDY"}]}'}
+            className="min-h-64 w-full resize-y rounded-xl border border-[#383838] bg-[#111] p-3 font-mono text-xs leading-relaxed text-white outline-none focus:border-emerald-400"
+          />
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setIsOpen(false)} className="rounded-xl border border-[#383838] bg-[#242424] px-4 py-2.5 text-xs font-semibold text-zinc-200 hover:bg-[#2e2e2e]">Close</button>
+            <button type="button" onClick={() => void importSchedule()} disabled={isImporting || !pasteValue.trim()} className="rounded-xl bg-emerald-400 px-4 py-2.5 text-xs font-bold text-[#171717] hover:brightness-110 disabled:opacity-50">
+              <Download className="mr-1 inline h-3.5 w-3.5" />{isImporting ? 'Importing…' : 'Import to My Calendar'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const trellisWindow = (
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-5">
+      <div className="w-full max-w-lg rounded-2xl border border-[#3b3b3b] bg-[#171717] p-5 shadow-2xl">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-violet-300">task context</p>
+            <h2 className="mt-1 font-serif text-xl font-semibold text-white">Trellis</h2>
+            <p className="mt-1 text-xs text-zinc-400">Choose the board whose urgent and current tasks should be included in the AI prompt.</p>
+          </div>
+          <button type="button" onClick={() => setIsTrellisOpen(false)} className="rounded-lg p-1.5 text-zinc-400 hover:bg-[#292929] hover:text-white" aria-label="Close Trellis">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="mt-5 space-y-3">
+          <button type="button" onClick={linkTrellis} className="flex items-center gap-1.5 rounded-xl border border-violet-400/40 bg-violet-400/10 px-3 py-2 text-xs font-semibold text-violet-200 hover:bg-violet-400/20">
+            <Link2 className="h-3.5 w-3.5" /> {trellisToken ? 'Refresh Trellis connection' : 'Connect Trellis'}
+          </button>
+          {trellisBoards.length > 0 && (
+            <select value={trellisBoardId} onChange={(event) => setTrellisBoardId(event.target.value)} className="w-full rounded-xl border border-violet-400/40 bg-[#111] px-3 py-2.5 text-xs text-violet-100" aria-label="Trellis board">
+              {trellisBoards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}
+            </select>
+          )}
+          <p className="max-h-48 overflow-y-auto rounded-xl border border-[#383838] bg-[#111] p-3 whitespace-pre-wrap text-xs leading-relaxed text-zinc-300">{trellisTasksText}</p>
+          <div className="flex justify-end">
+            <button type="button" onClick={() => setIsTrellisOpen(false)} className="rounded-xl bg-[#242424] px-4 py-2.5 text-xs font-semibold text-zinc-200 hover:bg-[#2e2e2e]">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <>
       <button
         type="button"
-        onClick={() => void copyWeekInfo()}
+        onClick={() => setIsOpen(true)}
         className="flex items-center gap-1.5 rounded-md border border-sky-400/40 bg-sky-400/10 px-2.5 py-1.5 text-xs font-semibold text-sky-200 transition hover:bg-sky-400/20"
       >
-        <Clipboard className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Copy week info</span>
-        <span className="sm:hidden">Copy week</span>
+        <Clipboard className="h-3.5 w-3.5" /> AI scheduler
       </button>
       <button
         type="button"
-        onClick={linkTrellis}
+        onClick={() => setIsTrellisOpen(true)}
         className="flex items-center gap-1.5 rounded-md border border-violet-400/40 bg-violet-400/10 px-2.5 py-1.5 text-xs font-semibold text-violet-200 transition hover:bg-violet-400/20"
       >
         <Link2 className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Link Trellis</span>
-        <span className="sm:hidden">Trellis</span>
-      </button>
-      {trellisBoards.length > 0 && (
-        <select
-          value={trellisBoardId}
-          onChange={(event) => setTrellisBoardId(event.target.value)}
-          className="max-w-40 rounded-md border border-violet-400/40 bg-[#171717] px-2 py-1.5 text-xs text-violet-100"
-          aria-label="Trellis board"
-        >
-          {trellisBoards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}
-        </select>
-      )}
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        className="flex items-center gap-1.5 rounded-md border border-emerald-400/40 bg-emerald-400/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-400/20"
-      >
-        <FileUp className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Import AI schedule</span>
-        <span className="sm:hidden">Import</span>
+        <span className="max-w-32 truncate">{trellisBoards.find((board) => board.id === trellisBoardId)?.name
+          ? `Trellis: ${trellisBoards.find((board) => board.id === trellisBoardId)?.name}`
+          : 'Trellis'}</span>
       </button>
       {isOpen && createPortal(
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-5">
-          <div className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[#3b3b3b] bg-[#171717] shadow-2xl sm:max-h-[calc(100dvh-2.5rem)]">
-            <div className="flex items-start justify-between border-b border-[#2b2b2b] p-5">
-              <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-300">manual AI workflow</p>
-                <h2 className="mt-1 font-serif text-xl font-semibold text-white">Import your schedule</h2>
-                <p className="mt-1 text-xs text-zinc-400">Paste the JSON returned by your AI model for {formatWeekRange(weekStartIso)}.</p>
-              </div>
-              <button type="button" onClick={() => setIsOpen(false)} className="rounded-lg p-1.5 text-zinc-400 hover:bg-[#292929] hover:text-white" aria-label="Close import schedule">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="space-y-3 overflow-y-auto p-4 sm:p-5">
-              <p className="rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs leading-relaxed text-sky-100">
-                First click <strong>Copy week info</strong>, paste it into your preferred AI model, then paste its JSON response below. The import replaces only AI-generated events; university, friend, and manually created events are preserved. Expected event keys: <code className="font-mono">{eventSchemaKeys}</code>.
-              </p>
-              <textarea
-                autoFocus
-                value={pasteValue}
-                onChange={(event) => setPasteValue(event.target.value)}
-                placeholder={'{"events":[{"title":"Study","description":"","startTime":"2026-10-31T09:00:00+00:00","endTime":"2026-10-31T10:30:00+00:00","category":"STUDY"}]}'} 
-                className="min-h-64 w-full resize-y rounded-xl border border-[#383838] bg-[#111] p-3 font-mono text-xs leading-relaxed text-white outline-none focus:border-emerald-400"
-              />
-              <div className="flex justify-end gap-2">
-                <button type="button" onClick={() => setIsOpen(false)} className="rounded-xl border border-[#383838] bg-[#242424] px-4 py-2.5 text-xs font-semibold text-zinc-200 hover:bg-[#2e2e2e]">Cancel</button>
-                <button type="button" onClick={() => void importSchedule()} disabled={isImporting || !pasteValue.trim()} className="rounded-xl bg-emerald-400 px-4 py-2.5 text-xs font-bold text-[#171717] hover:brightness-110 disabled:opacity-50">
-                  <Download className="mr-1 inline h-3.5 w-3.5" />{isImporting ? 'Importing…' : 'Import to My Calendar'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
+        schedulerWindow,
         document.body
       )}
+      {isTrellisOpen && createPortal(trellisWindow, document.body)}
     </>
   );
 }

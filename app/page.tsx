@@ -1717,33 +1717,11 @@ export default function App() {
 
           <button
             onClick={() => setWeekOffset(todayWeekOffset)}
-
             className="px-3 py-1.5 rounded-md bg-[#222222] hover:bg-[#2c2c2c] border border-[#333333] text-xs font-medium text-zinc-200 flex items-center gap-1.5 transition cursor-pointer"
           >
             <CalendarIcon className="w-3.5 h-3.5 text-zinc-400" />
             Today
           </button>
-
-          <button
-            type="button"
-            draggable
-            onDragStart={startNewEventDrag}
-            className="flex cursor-grab items-center gap-1.5 rounded-md border border-emerald-400/40 bg-emerald-400/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-400/20 active:cursor-grabbing"
-            title="Drag onto your personal calendar to create an event"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">New event (drag)</span>
-            <span className="sm:hidden">New event</span>
-          </button>
-
-          <AISchedulerModal
-            weekStartIso={weekStart.toISOString()}
-            existingScheduleText={existingScheduleText}
-            existingAiScheduleText={existingAiScheduleText}
-            trellisUrl={process.env.NEXT_PUBLIC_TRELLIS_URL || 'https://trellllis.vercel.app'}
-            onImport={importAiSchedule}
-            showToast={showToast}
-          />
 
           <div className="flex items-center gap-1">
             <button
@@ -1766,6 +1744,27 @@ export default function App() {
             {dateLabel.format(weekStart)} – {dateLabel.format(weekEnd)}
 
           </h2>
+
+          <button
+            type="button"
+            draggable
+            onDragStart={startNewEventDrag}
+            className="flex cursor-grab items-center gap-1.5 rounded-md border border-emerald-400/40 bg-emerald-400/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-400/20 active:cursor-grabbing"
+            title="Drag onto your personal calendar to create an event"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">New event (drag)</span>
+            <span className="sm:hidden">New event</span>
+          </button>
+
+          <AISchedulerModal
+            weekStartIso={weekStart.toISOString()}
+            existingScheduleText={existingScheduleText}
+            existingAiScheduleText={existingAiScheduleText}
+            trellisUrl={process.env.NEXT_PUBLIC_TRELLIS_URL || 'https://trellllis.vercel.app'}
+            onImport={importAiSchedule}
+            showToast={showToast}
+          />
         </div>
 
         {/* Center/Right: Active Split-Column Mode Pill + Stack Code Guide + User */}
