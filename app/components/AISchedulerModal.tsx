@@ -51,7 +51,7 @@ const categoryColors: Record<AiEventCategory, string> = {
 };
 
 const AI_BATCH_COLORS = ['#38bdf8', '#c084fc', '#fb7185', '#34d399', '#fbbf24', '#2dd4bf', '#818cf8'];
-const AI_REQUEST_TIMEOUT_MS = 30_000;
+const AI_REQUEST_TIMEOUT_MS = 55_000;
 
 function colorForGeneration(generation: number) {
   return AI_BATCH_COLORS[generation % AI_BATCH_COLORS.length];
@@ -116,7 +116,7 @@ export default function AISchedulerModal({
     } catch (error) {
       showToast(
         controller.signal.aborted
-          ? 'Schedule generation timed out after 30 seconds. Try a shorter or simpler request.'
+          ? 'Schedule generation timed out after 55 seconds. Try a shorter request or generate fewer days at a time.'
           : error instanceof Error
             ? error.message
             : 'Could not generate a schedule.'
@@ -218,9 +218,9 @@ export default function AISchedulerModal({
               {reasoning && <p className="rounded-xl border border-[#343434] bg-[#111] p-3 text-xs leading-relaxed text-zinc-300">{reasoning}</p>}
               {reasoning && stagedEvents.length === 0 && (
                 <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-3 text-xs leading-relaxed text-amber-100">
-                  <p className="font-semibold">Request events within the active week</p>
+                  <p className="font-semibold">Request events within the planning horizon</p>
                   <p className="mt-1 text-amber-100/80">
-                    This scheduler is planning {formatWeekRange(weekStartIso)}. Request dates and times inside that range, or use the week arrows to select another week first.
+                    This scheduler is planning {formatWeekRange(weekStartIso)} and can follow an explicitly requested adjacent range. For a longer plan, use the week arrows or split the request into smaller ranges.
                   </p>
                 </div>
               )}

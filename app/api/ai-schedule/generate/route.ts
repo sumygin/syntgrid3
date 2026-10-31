@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getAiScheduleUser } from "../_auth";
 
 export const maxDuration = 60;
+const MAX_SCHEDULE_HORIZON_DAYS = 14;
 
 const categorySchema = z.enum(["STUDY", "SLEEP", "MEAL", "GYM", "PERSONAL"]);
 const generatedEventSchema = z.object({
@@ -59,10 +60,11 @@ export async function POST(request: Request) {
       model: createGoogle({ apiKey })("gemini-3.8-flash"),
       system: `You are a strict academic week scheduler. Create a practical schedule for the target seven-day week.
 Never overlap any occupied slot in the existing schedule, and never overlap events you create.
-Only schedule within the target week, use valid ISO-8601 timestamps with timezone offsets, and keep events at least 15 minutes long.
+Normally schedule within the target week. If the user explicitly requests a contiguous date range that extends beyond it, honor that request up to ${MAX_SCHEDULE_HORIZON_DAYS} days from the target start. Never schedule outside that maximum horizon.
+Use valid ISO-8601 timestamps with timezone offsets, and keep events at least 15 minutes long.
 Respect the user's request, prioritize study around existing commitments, and do not invent fixed commitments.
 Use STUDY, SLEEP, MEAL, GYM, or PERSONAL categories only.
-Target week starts at ${weekStart.toISOString()} and ends before ${new Date(weekStart.getTime() + 7 * 86_400_000).toISOString()}.
+Target week starts at ${weekStart.toISOString()}. The maximum allowed scheduling horizon ends before ${new Date(weekStart.getTime() + MAX_SCHEDULE_HORIZON_DAYS * 86_400_000).toISOString()}.
 The current time is ${current.toISOString()}.
 Existing occupied slots (these are hard constraints):
 ${existingScheduleText}
@@ -86,7 +88,7 @@ ${prompt}`
       return NextResponse.json({ error: "Gemini returned an incomplete schedule response. Try again." }, { status: 502 });
     }
     const events = parsedResult.data.events.map((event) => ({ ...event, description: event.description || null }));
-    const weekEnd = weekStart.getTime() + 7 * 86_400_000;
+    const weekEnd = weekStart.getTime() + MAX_SCHEDULE_HORIZON_DAYS * 86_400_000;
     for (const event of events) {
       const start = new Date(event.startTime).getTime();
       const end = new Date(event.endTime).getTime();
