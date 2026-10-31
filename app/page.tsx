@@ -853,6 +853,13 @@ export default function App() {
     activeCalendars.flatMap((calendar) => calendar.events).map(calendarEventToScheduleEvent),
     []
   );
+  const existingAiScheduleText = serializeSchedule(
+    weekStart.toISOString(),
+    calendars.find((calendar) => calendar.id === 'cal-me')?.events
+      .filter((event) => event.id.startsWith('ai-'))
+      .map(calendarEventToScheduleEvent) ?? [],
+    []
+  );
 
   useEffect(() => {
     if (!loadedAccountEmail || !currentTime || calendars.length === 0 || hasInitialCalendarFocus.current) {
@@ -1506,7 +1513,12 @@ export default function App() {
         category: event.category
       };
     });
-    const occupied = activeCalendars.flatMap((calendar) => calendar.events);
+    const existingAiEvents = personalCalendar.events.filter(
+      (event) => event.id.startsWith('ai-') && (event.weekOffset ?? 0) === weekOffset
+    );
+    const occupied = activeCalendars.flatMap((calendar) => calendar.events).filter(
+      (event) => !existingAiEvents.some((aiEvent) => aiEvent.id === event.id)
+    );
     for (const imported of importedCalendarEvents) {
       const overlaps = [...occupied, ...importedCalendarEvents].some((existing) =>
         existing.id !== imported.id &&
@@ -1517,10 +1529,13 @@ export default function App() {
       );
       if (overlaps) throw new Error(`"${imported.title}" overlaps an existing event.`);
     }
+    for (const event of existingAiEvents) {
+      await patchOwnCalendarEvent('delete', event);
+    }
     for (const event of importedCalendarEvents) {
       await patchOwnCalendarEvent('create', event);
     }
-    showToast(`Imported ${importedCalendarEvents.length} event${importedCalendarEvents.length === 1 ? '' : 's'} into My Calendar.`);
+    showToast(`Replaced AI schedule with ${importedCalendarEvents.length} event${importedCalendarEvents.length === 1 ? '' : 's'}.`);
   };
 
   // Copy Gemini prompt helper with fallback for permissions policy
@@ -1692,6 +1707,7 @@ export default function App() {
           <AISchedulerModal
             weekStartIso={weekStart.toISOString()}
             existingScheduleText={existingScheduleText}
+            existingAiScheduleText={existingAiScheduleText}
             onImport={importAiSchedule}
             showToast={showToast}
           />

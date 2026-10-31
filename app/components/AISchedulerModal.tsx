@@ -15,6 +15,7 @@ export interface ImportedScheduleEvent {
 interface WeekScheduleToolsProps {
   weekStartIso: string;
   existingScheduleText: string;
+  existingAiScheduleText: string;
   onImport: (events: ImportedScheduleEvent[]) => Promise<void>;
   showToast: (message: string) => void;
 }
@@ -33,8 +34,8 @@ function parseImportedSchedule(value: unknown): ImportedScheduleEvent[] {
     value && typeof value === 'object' && !Array.isArray(value) && 'events' in value
       ? (value as { events: unknown }).events
       : value;
-  if (!Array.isArray(rawEvents) || rawEvents.length === 0 || rawEvents.length > 100) {
-    throw new Error('Paste a JSON object with 1–100 events in its "events" array.');
+  if (!Array.isArray(rawEvents) || rawEvents.length > 100) {
+    throw new Error('Paste a JSON object with 0–100 events in its "events" array.');
   }
   return rawEvents.map((value, index) => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -66,6 +67,7 @@ function parseImportedSchedule(value: unknown): ImportedScheduleEvent[] {
 export default function AISchedulerModal({
   weekStartIso,
   existingScheduleText,
+  existingAiScheduleText,
   onImport,
   showToast
 }: WeekScheduleToolsProps) {
@@ -83,6 +85,12 @@ Return ONLY valid JSON in this exact format:
 Rules:
 - Every event must have title, description, startTime, endTime, and category.
 - Return no more than 100 events.
+- This import replaces only the existing AI-generated events below for this week.
+- The events array must be exhaustive: return the complete desired AI schedule for the entire week, not only changes or additions.
+- To rewrite an AI event, return its replacement in the new events array.
+- To delete an AI event, leave it out of the new events array.
+- Return an empty events array to delete all existing AI-generated events.
+- Never modify or replace university, friend, or manually created personal events.
 - Use ISO-8601 timestamps with timezone offsets.
 - endTime must be after startTime.
 - Keep events inside ${formatWeekRange(weekStartIso)}.
@@ -91,7 +99,10 @@ Rules:
 - Categories can be STUDY, SLEEP, MEAL, GYM, or PERSONAL.
 
 Occupied events:
-${existingScheduleText}`;
+${existingScheduleText}
+
+Existing AI-generated events that may be rewritten or deleted:
+${existingAiScheduleText}`;
     try {
       await navigator.clipboard.writeText(text);
       showToast('Week information and AI output format copied.');
@@ -150,7 +161,7 @@ ${existingScheduleText}`;
             </div>
             <div className="space-y-3 overflow-y-auto p-4 sm:p-5">
               <p className="rounded-xl border border-sky-400/30 bg-sky-400/10 p-3 text-xs leading-relaxed text-sky-100">
-                First click <strong>Copy week info</strong>, paste it into your preferred AI model, then paste its JSON response below. Expected event keys: <code className="font-mono">{eventSchemaKeys}</code>.
+                First click <strong>Copy week info</strong>, paste it into your preferred AI model, then paste its JSON response below. The import replaces only AI-generated events; university, friend, and manually created events are preserved. Expected event keys: <code className="font-mono">{eventSchemaKeys}</code>.
               </p>
               <textarea
                 autoFocus
