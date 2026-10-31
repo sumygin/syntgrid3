@@ -1,7 +1,7 @@
 'use client';
 
 import { Clipboard, Download, Link2, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 export interface ImportedScheduleEvent {
@@ -83,6 +83,35 @@ export default function AISchedulerModal({
   const [trellisTasksText, setTrellisTasksText] = useState('No Trellis board linked.');
   const trellisWindowRef = useRef<Window | null>(null);
   const trellisBoardStorageKey = 'syntgrid:trellis-board';
+
+  const fetchTrellisTasks = useCallback(async (): Promise<string> => {
+    const board = trellisBoards.find((item) => item.id === trellisBoardId);
+    if (!board || !trellisToken) return 'No Trellis board linked.';
+    const response = await fetch(`${trellisUrl}/api/board?id=${encodeURIComponent(board.id)}`, {
+      headers: { Authorization: `Bearer ${trellisToken}` },
+      cache: 'no-store'
+    });
+    if (!response.ok) throw new Error('Could not read the selected Trellis board.');
+    const data = await response.json() as {
+      l?: {
+        n?: string;
+        c?: {
+          t?: string;
+          d?: string;
+          due?: string;
+          done?: boolean;
+          k?: { t?: string; done?: boolean }[];
+        }[];
+      }[];
+    };
+    const lines = (data.l ?? []).flatMap((list) =>
+      (list.c ?? []).filter((card) => !card.done).map((card) => {
+        const checklist = (card.k ?? []).filter((item) => !item.done).map((item) => item.t).filter(Boolean);
+        return `- [${list.n ?? 'Unsorted'}] ${card.t ?? 'Untitled'}${card.due ? ` (due ${card.due})` : ''}${card.d ? ` — ${card.d}` : ''}${checklist.length ? `; open checklist: ${checklist.join(', ')}` : ''}`;
+      })
+    );
+    return lines.length ? lines.join('\n') : 'No incomplete tasks on the selected Trellis board.';
+  }, [trellisBoardId, trellisBoards, trellisToken, trellisUrl]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -172,6 +201,14 @@ export default function AISchedulerModal({
   };
 
   const copyWeekInfo = async () => {
+    let currentTrellisTasks = trellisTasksText;
+    try {
+      currentTrellisTasks = await fetchTrellisTasks();
+      setTrellisTasksText(currentTrellisTasks);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not refresh Trellis tasks.');
+      return;
+    }
     const text = `Create a schedule for ${formatWeekRange(weekStartIso)}.
 
 Use only dates within this week. Do not overlap any occupied slot below.
@@ -200,7 +237,7 @@ Trellis tasks:
 - If there is spare time, schedule a few lower-priority tasks that would otherwise be put off.
 - Do not schedule completed tasks, and do not let Trellis work displace fixed occupied events.
 
-${trellisTasksText}
+${currentTrellisTasks}
 
 Occupied events:
 ${existingScheduleText}
