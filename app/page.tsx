@@ -944,7 +944,6 @@ export default function App() {
     };
     scrollContainer.setPointerCapture(event.pointerId);
     setIsPanningCalendar(true);
-    event.preventDefault();
   };
 
   const panCalendar = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -956,6 +955,7 @@ export default function App() {
     if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) pan.hasMoved = true;
     if (!pan.hasMoved) return;
 
+    event.preventDefault();
     event.currentTarget.scrollLeft = pan.startScrollLeft - deltaX;
     event.currentTarget.scrollTop = pan.startScrollTop - deltaY;
   };
