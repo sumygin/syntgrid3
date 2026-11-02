@@ -87,6 +87,7 @@ export default function AISchedulerModal({
   const [trellisBoards, setTrellisBoards] = useState<{ id: string; name: string; role: string }[]>([]);
   const [trellisBoardId, setTrellisBoardId] = useState('');
   const [trellisTasksText, setTrellisTasksText] = useState('No Trellis board linked.');
+
   const trellisWindowRef = useRef<Window | null>(null);
   const trellisBoardStorageKey = 'syntgrid:trellis-board';
 
@@ -317,7 +318,7 @@ Wait for my requested changes before producing the final JSON.`;
     }
   };
 
-  const importSchedule = async () => {
+  const importSchedule = useCallback(async () => {
     try {
       const parsed: unknown = JSON.parse(pasteValue);
       const events = parseImportedSchedule(parsed);
@@ -330,7 +331,27 @@ Wait for my requested changes before producing the final JSON.`;
     } finally {
       setIsImporting(false);
     }
-  };
+  }, [onImport, pasteValue, showToast]);
+
+  useEffect(() => {
+    const handleKeyboardShortcut = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (isTrellisOpen) setIsTrellisOpen(false);
+        else if (isOpen) setIsOpen(false);
+        else return;
+        event.preventDefault();
+        return;
+      }
+
+      if (isOpen && (event.metaKey || event.ctrlKey) && event.key === 'Enter' && pasteValue.trim()) {
+        event.preventDefault();
+        void importSchedule();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyboardShortcut);
+    return () => window.removeEventListener('keydown', handleKeyboardShortcut);
+  }, [importSchedule, isOpen, isTrellisOpen, pasteValue]);
 
   const schedulerWindow = (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-5">

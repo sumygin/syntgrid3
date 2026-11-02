@@ -657,6 +657,55 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const handleKeyboardShortcut = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isEditingText = target?.isContentEditable ||
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.tagName === 'SELECT';
+
+      if (event.key === 'Escape') {
+        if (eventDetails) setEventDetails(null);
+        else if (isPersonalCalendarEditorOpen) setIsPersonalCalendarEditorOpen(false);
+        else if (isAddModalOpen) {
+          setIsAddModalOpen(false);
+          setIsFriendProfileDropdownOpen(false);
+        } else if (isCodeModalOpen) setIsCodeModalOpen(false);
+        else if (isTutorialOpen) setIsTutorialOpen(false);
+        else return;
+        event.preventDefault();
+        return;
+      }
+
+      if (isEditingText || event.metaKey || event.ctrlKey || event.altKey) return;
+
+      if (event.key.toLowerCase() === 't') {
+        setWeekOffset(todayWeekOffset);
+        event.preventDefault();
+      } else if (event.key === 'ArrowLeft') {
+        setWeekOffset((week) => week - 1);
+        event.preventDefault();
+      } else if (event.key === 'ArrowRight') {
+        setWeekOffset((week) => week + 1);
+        event.preventDefault();
+      } else if (event.key === '?') {
+        setIsTutorialOpen(true);
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyboardShortcut);
+    return () => window.removeEventListener('keydown', handleKeyboardShortcut);
+  }, [
+    eventDetails,
+    isAddModalOpen,
+    isCodeModalOpen,
+    isPersonalCalendarEditorOpen,
+    isTutorialOpen,
+    todayWeekOffset
+  ]);
+
+  useEffect(() => {
     if (status !== 'unauthenticated') return;
     const controller = new AbortController();
     fetch('/api/auth/providers', { signal: controller.signal })
@@ -2057,7 +2106,7 @@ export default function App() {
                                         : 'border border-l-[3px]'
                                     }`}
                                   >
-                                    {cal.id === 'cal-me' && !ev.id.startsWith('ai-') && (
+                                    {cal.id === 'cal-me' && (
                                       <>
                                         <div
                                           className="absolute inset-x-0 top-0 z-10 h-2 cursor-ns-resize"
