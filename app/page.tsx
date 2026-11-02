@@ -112,6 +112,7 @@ interface CalendarPanState {
   startScrollLeft: number;
   startScrollTop: number;
   hasMoved: boolean;
+  eventId: string | null;
 }
 
 interface EventResizeState {
@@ -934,13 +935,17 @@ export default function App() {
     }
 
     const scrollContainer = event.currentTarget;
+    const eventElement = event.target instanceof Element
+      ? event.target.closest<HTMLElement>('[data-calendar-event-id]')
+      : null;
     calendarPanRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
       startScrollLeft: scrollContainer.scrollLeft,
       startScrollTop: scrollContainer.scrollTop,
-      hasMoved: false
+      hasMoved: false,
+      eventId: eventElement?.dataset.calendarEventId ?? null
     };
     scrollContainer.setPointerCapture(event.pointerId);
     setIsPanningCalendar(true);
@@ -961,7 +966,13 @@ export default function App() {
   };
 
   const stopCalendarPan = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (calendarPanRef.current?.pointerId !== event.pointerId) return;
+    const pan = calendarPanRef.current;
+    if (pan?.pointerId !== event.pointerId) return;
+    if (!pan.hasMoved && pan.eventId) {
+      const personalCalendar = calendarsRef.current.find((calendar) => calendar.id === 'cal-me');
+      const calendarEvent = personalCalendar?.events.find((calendarEvent) => calendarEvent.id === pan.eventId);
+      if (calendarEvent) setEventDetails({ ...calendarEvent });
+    }
     calendarPanRef.current = null;
     setIsPanningCalendar(false);
   };
@@ -2009,6 +2020,7 @@ export default function App() {
                                   <div
                                     key={ev.id}
                                     data-calendar-event
+                                    data-calendar-event-id={ev.id}
                                     onDoubleClick={(event) => {
                                       event.stopPropagation();
                                       if (cal.id === 'cal-me') setEventDetails({ ...ev });
