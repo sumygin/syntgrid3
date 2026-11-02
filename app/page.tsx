@@ -2011,7 +2011,7 @@ export default function App() {
                                     data-calendar-event
                                     onDoubleClick={(event) => {
                                       event.stopPropagation();
-                                      if (cal.id === 'cal-me' && !ev.id.startsWith('ai-')) setEventDetails({ ...ev });
+                                      if (cal.id === 'cal-me') setEventDetails({ ...ev });
                                     }}
                                     onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => {
                                       const rect = e.currentTarget.getBoundingClientRect();
@@ -2833,7 +2833,7 @@ export default function App() {
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-300">
-                  personal event
+                  {eventDetails.id.startsWith('ai-') ? 'ai-generated event' : 'personal event'}
                 </p>
                 <h3 className="mt-1 font-serif text-lg font-semibold text-white">
                   Event details
