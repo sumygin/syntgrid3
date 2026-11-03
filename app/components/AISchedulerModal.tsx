@@ -32,6 +32,19 @@ function formatWeekRange(weekStartIso: string) {
   return `${format.format(start)} to ${format.format(end)}`;
 }
 
+function formatTrellisDueDate(due: string, weekStartIso: string) {
+  const dueDate = new Date(due);
+  if (Number.isNaN(dueDate.getTime())) return due;
+
+  const scheduleWeekStart = new Date(weekStartIso);
+  const nextWeekStart = scheduleWeekStart.getTime() + 7 * 86_400_000;
+  const followingWeekStart = nextWeekStart + 7 * 86_400_000;
+  if (dueDate.getTime() >= nextWeekStart && dueDate.getTime() < followingWeekStart) {
+    return new Intl.DateTimeFormat(undefined, { weekday: 'long', timeZone: 'UTC' }).format(dueDate);
+  }
+  return due;
+}
+
 function parseImportedSchedule(value: unknown): ImportedScheduleEvent[] {
   const rawEvents =
     value && typeof value === 'object' && !Array.isArray(value) && 'events' in value
@@ -114,11 +127,12 @@ export default function AISchedulerModal({
     const lines = (data.l ?? []).flatMap((list) =>
       (list.c ?? []).filter((card) => !card.done).map((card) => {
         const checklist = (card.k ?? []).filter((item) => !item.done).map((item) => item.t).filter(Boolean);
-        return `- [${list.n ?? 'Unsorted'}] ${card.t ?? 'Untitled'}${card.due ? ` (due ${card.due})` : ''}${card.d ? ` — ${card.d}` : ''}${checklist.length ? `; open checklist: ${checklist.join(', ')}` : ''}`;
+        const due = card.due ? formatTrellisDueDate(card.due, weekStartIso) : '';
+        return `- [${list.n ?? 'Unsorted'}] ${card.t ?? 'Untitled'}${due ? ` (due ${due})` : ''}${card.d ? ` — ${card.d}` : ''}${checklist.length ? `; open checklist: ${checklist.join(', ')}` : ''}`;
       })
     );
     return lines.length ? lines.join('\n') : 'No incomplete tasks on the selected Trellis board.';
-  }, [trellisBoardId, trellisBoards, trellisToken, trellisUrl]);
+  }, [trellisBoardId, trellisBoards, trellisToken, trellisUrl, weekStartIso]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -190,12 +204,13 @@ export default function AISchedulerModal({
       const lines = (data.l ?? []).flatMap((list) =>
         (list.c ?? []).filter((card) => !card.done).map((card) => {
           const checklist = (card.k ?? []).filter((item) => !item.done).map((item) => item.t).filter(Boolean);
-          return `- [${list.n ?? 'Unsorted'}] ${card.t ?? 'Untitled'}${card.due ? ` (due ${card.due})` : ''}${card.d ? ` — ${card.d}` : ''}${checklist.length ? `; open checklist: ${checklist.join(', ')}` : ''}`;
+          const due = card.due ? formatTrellisDueDate(card.due, weekStartIso) : '';
+          return `- [${list.n ?? 'Unsorted'}] ${card.t ?? 'Untitled'}${due ? ` (due ${due})` : ''}${card.d ? ` — ${card.d}` : ''}${checklist.length ? `; open checklist: ${checklist.join(', ')}` : ''}`;
         })
       );
       setTrellisTasksText(lines.length ? lines.join('\n') : 'No incomplete tasks on the selected Trellis board.');
     }).catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Could not read the selected Trellis board.'));
-  }, [showToast, trellisBoardId, trellisBoards, trellisToken, trellisUrl]);
+  }, [showToast, trellisBoardId, trellisBoards, trellisToken, trellisUrl, weekStartIso]);
 
   const linkTrellis = () => {
     setIsTrellisOpen(true);
