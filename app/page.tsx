@@ -574,6 +574,7 @@ export default function App() {
   const hasInitialCalendarFocus = useRef(false);
   const hasInitialTodayFocus = useRef(false);
   const [eventDetails, setEventDetails] = useState<CalendarEvent | null>(null);
+  const [pendingAiReview, setPendingAiReview] = useState<CalendarEvent[] | null>(null);
   const [isSavingEventDetails, setIsSavingEventDetails] = useState(false);
   const [eventResize, setEventResize] = useState<EventResizeState | null>(null);
   const [isPanningCalendar, setIsPanningCalendar] = useState(false);
@@ -665,7 +666,8 @@ export default function App() {
         target?.tagName === 'SELECT';
 
       if (event.key === 'Escape') {
-        if (eventDetails) setEventDetails(null);
+        if (pendingAiReview) setPendingAiReview(null);
+        else if (eventDetails) setEventDetails(null);
         else if (isPersonalCalendarEditorOpen) setIsPersonalCalendarEditorOpen(false);
         else if (isAddModalOpen) {
           setIsAddModalOpen(false);
@@ -698,6 +700,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyboardShortcut);
   }, [
     eventDetails,
+    pendingAiReview,
     isAddModalOpen,
     isCodeModalOpen,
     isPersonalCalendarEditorOpen,
@@ -1608,13 +1611,23 @@ export default function App() {
       };
     });
     if (!loadedAccountEmail) throw new Error('Your account is still loading. Try again in a moment.');
+    setPendingAiReview(importedCalendarEvents);
+  };
+
+  const acceptAiSchedule = async () => {
+    if (!pendingAiReview || !loadedAccountEmail) return;
     const pendingKey = getPendingAiScheduleKey(loadedAccountEmail, weekOffset);
     window.localStorage.setItem(
       pendingKey,
-      JSON.stringify({ weekOffset, events: importedCalendarEvents })
+      JSON.stringify({ weekOffset, events: pendingAiReview })
     );
-    await flushPendingAiSchedule(loadedAccountEmail, weekOffset);
-    showToast(`Replaced AI schedule with ${importedCalendarEvents.length} event${importedCalendarEvents.length === 1 ? '' : 's'}.`);
+    try {
+      await flushPendingAiSchedule(loadedAccountEmail, weekOffset);
+      setPendingAiReview(null);
+      showToast(`Replaced AI schedule with ${pendingAiReview.length} event${pendingAiReview.length === 1 ? '' : 's'}.`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not save the proposed AI schedule.');
+    }
   };
 
   const savePromptNotes = async (notes: string) => {
@@ -1867,6 +1880,66 @@ export default function App() {
         <div className="fixed bottom-5 left-5 z-[2000] bg-[#1f1f1f] border border-emerald-500/50 text-zinc-100 px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs font-medium animate-fade-in">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {pendingAiReview && (
+        <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/80 p-3 backdrop-blur-sm sm:p-5">
+          <div className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-[#3b3b3b] bg-[#171717] shadow-2xl sm:max-h-[calc(100dvh-2.5rem)]">
+            <div className="flex items-start justify-between gap-4 border-b border-[#2b2b2b] p-4 sm:p-5">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-300">review schedule</p>
+                <h2 className="mt-1 font-serif text-xl font-semibold text-white">Compare schedules</h2>
+                <p className="mt-1 text-xs text-zinc-400">The proposed schedule replaces only AI-generated events. Existing university, friend, and manual events remain unchanged.</p>
+              </div>
+              <button type="button" onClick={() => setPendingAiReview(null)} className="rounded-lg p-1.5 text-zinc-400 hover:bg-[#292929] hover:text-white" aria-label="Close schedule comparison">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-4 lg:grid-cols-2 sm:p-5">
+              {[
+                {
+                  title: 'Current schedule',
+                  events: calendars.find((calendar) => calendar.id === 'cal-me')?.events ?? []
+                },
+                {
+                  title: 'Proposed schedule',
+                  events: [
+                    ...(calendars.find((calendar) => calendar.id === 'cal-me')?.events ?? [])
+                      .filter((event) => !event.id.startsWith('ai-')),
+                    ...pendingAiReview
+                  ]
+                }
+              ].map((preview) => (
+                <div key={preview.title} className="min-w-[620px] overflow-hidden rounded-xl border border-[#303030] bg-[#121212]">
+                  <div className="border-b border-[#2b2b2b] bg-[#1d1d1d] px-3 py-2 text-sm font-semibold text-zinc-100">{preview.title}</div>
+                  <div className="grid grid-cols-7 border-b border-[#2b2b2b] bg-[#161616]">
+                    {DAYS_OF_WEEK.map((day) => <div key={day.dayIndex} className="border-r border-[#242424] px-2 py-2 text-center text-[10px] font-medium text-zinc-400 last:border-r-0">{day.name}</div>)}
+                  </div>
+                  <div className="grid h-[36rem] grid-cols-7 bg-[#141414]">
+                    {DAYS_OF_WEEK.map((day) => (
+                      <div key={day.dayIndex} className="relative border-r border-[#242424] last:border-r-0">
+                        {HOURS.map((hour) => <div key={hour} className="absolute inset-x-0 border-t border-[#222]" style={{ top: `${((hour - HOURS[0]) / (HOURS[HOURS.length - 1] - HOURS[0] + 1)) * 100}%` }} />)}
+                        {preview.events.filter((event) => event.dayIndex === day.dayIndex && (event.weekOffset ?? 0) === weekOffset).map((event) => (
+                          <div
+                            key={event.id}
+                            className="absolute inset-x-1 overflow-hidden rounded border border-sky-400/60 bg-sky-400/20 px-1 py-1 text-[9px] text-sky-100"
+                            style={{ top: `${(event.start / 24) * 100}%`, height: `${Math.max(1.5, ((event.end - event.start) / 24) * 100)}%` }}
+                          >
+                            <span className="font-semibold">{event.title}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-[#2b2b2b] p-4">
+              <button type="button" onClick={() => setPendingAiReview(null)} className="rounded-xl border border-[#383838] bg-[#242424] px-4 py-2.5 text-xs font-semibold text-zinc-200 hover:bg-[#2e2e2e]">Cancel</button>
+              <button type="button" onClick={() => void acceptAiSchedule()} className="rounded-xl bg-emerald-400 px-4 py-2.5 text-xs font-bold text-[#171717] hover:brightness-110">Accept proposed schedule</button>
+            </div>
+          </div>
         </div>
       )}
 
