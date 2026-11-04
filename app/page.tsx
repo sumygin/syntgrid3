@@ -305,6 +305,147 @@ function layoutEventsInSubcolumn(events: CalendarEvent[]): PositionedEvent[] {
   return positioned;
 }
 
+function ScheduleComparisonGrid({
+  currentEvents,
+  proposedEvents,
+  weekOffset,
+  weekStart,
+  todayWeekOffset,
+  todayDayIndex
+}: {
+  currentEvents: CalendarEvent[];
+  proposedEvents: CalendarEvent[];
+  weekOffset: number;
+  weekStart: Date;
+  todayWeekOffset: number;
+  todayDayIndex: number;
+}) {
+  const comparisonCalendars: CalendarItemWithPalette[] = [
+    {
+      id: 'comparison-current',
+      name: 'Current schedule',
+      ownerName: 'Current schedule',
+      email: '',
+      type: 'custom-file',
+      checked: true,
+      isDeletable: false,
+      lastSynced: '',
+      events: currentEvents,
+      palette: RAINBOW_PALETTE[4]
+    },
+    {
+      id: 'comparison-proposed',
+      name: 'Proposed AI schedule',
+      ownerName: 'Proposed AI schedule',
+      email: '',
+      type: 'custom-file',
+      checked: true,
+      isDeletable: false,
+      lastSynced: '',
+      events: proposedEvents,
+      palette: RAINBOW_PALETTE[3]
+    }
+  ];
+
+  return (
+    <div className="min-h-0 flex-1 overflow-auto touch-pan-x">
+      <div
+        className="min-h-full min-w-[1100px] flex flex-col"
+        style={{ minWidth: `${64 + DAYS_OF_WEEK.length * 360}px` }}
+      >
+        <div className="sticky top-0 z-20 flex border-b border-[#262626] bg-[#161616]">
+          <div className="sticky left-0 z-30 flex w-16 shrink-0 items-center justify-center border-r border-[#262626] bg-[#161616] text-[10px] uppercase tracking-wider text-zinc-500">
+            GMT+1
+          </div>
+          <div className="grid flex-1 grid-cols-7">
+            {DAYS_OF_WEEK.map((day) => {
+              const isCurrentDay = weekOffset === todayWeekOffset && day.dayIndex === todayDayIndex;
+              return (
+                <div key={day.dayIndex} className={`border-r border-[#242424] last:border-r-0 ${isCurrentDay ? 'bg-[#1a1c23]' : ''}`}>
+                  <div className={`h-[3px] ${isCurrentDay ? 'bg-[#54a0ff]' : 'bg-transparent'}`} />
+                  <div className="px-3 py-2">
+                    <div className={`text-lg font-semibold leading-none ${isCurrentDay ? 'text-[#54a0ff]' : 'text-zinc-200'}`}>
+                      {new Date(weekStart.getTime() + day.dayIndex * 86_400_000).getUTCDate()}
+                    </div>
+                    <div className={`mt-1 text-xs ${isCurrentDay ? 'font-medium text-[#74c0fc]' : 'text-zinc-400'}`}>
+                      {day.name}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 border-t border-[#232323] bg-[#141414]">
+                    {comparisonCalendars.map((calendar) => (
+                      <div key={calendar.id} className="truncate border-r border-[#222] px-1.5 py-1 text-[10px] font-medium last:border-r-0" style={{ color: calendar.palette.text }}>
+                        <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: calendar.palette.hex }} />
+                        {calendar.ownerName}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="relative flex flex-none" style={{ height: `${HOURS.length * HOUR_HEIGHT}px` }}>
+          <div className="sticky left-0 z-10 w-16 shrink-0 border-r border-[#262626] bg-[#141414]">
+            {HOURS.map((hour) => (
+              <div key={hour} className="border-b border-[#222] pr-2.5 pt-1 text-right text-[11px] font-medium text-zinc-500" style={{ height: `${HOUR_HEIGHT}px` }}>
+                {formatCalendarTime(hour)}
+              </div>
+            ))}
+          </div>
+          <div className="relative grid flex-1 grid-cols-7">
+            <div className="pointer-events-none absolute inset-0 z-0 flex flex-col">
+              {HOURS.map((hour) => (
+                <div key={hour} className="w-full border-b border-[#222]" style={{ height: `${HOUR_HEIGHT}px` }}>
+                  <div className="h-1/2 border-b border-dashed border-[#1c1c1c]" />
+                </div>
+              ))}
+            </div>
+            {DAYS_OF_WEEK.map((day) => (
+              <div key={day.dayIndex} className="relative z-10 flex border-r border-[#262626] last:border-r-0">
+                {comparisonCalendars.map((calendar) => {
+                  const dayEvents = calendar.events.filter((event) =>
+                    event.dayIndex === day.dayIndex && (event.weekOffset ?? 0) === weekOffset
+                  );
+                  const positionedEvents = layoutEventsInSubcolumn(dayEvents);
+                  return (
+                    <div key={calendar.id} className="relative h-full flex-1 border-r border-[#1e1e1e] last:border-r-0">
+                      {positionedEvents.map((event) => {
+                        const palette = getEventPalette(event, calendar.palette);
+                        return (
+                          <div
+                            key={event.id}
+                            className="absolute overflow-hidden rounded-lg border border-l-[3px] px-2 py-1.5 text-[10px] shadow-sm"
+                            style={{
+                              top: `${event.start * HOUR_HEIGHT + 2}px`,
+                              height: `${Math.max(18, (event.end - event.start) * HOUR_HEIGHT - 4)}px`,
+                              left: `calc(${(event.colIndex * 100) / event.totalCols}% + 2px)`,
+                              width: `calc(${100 / event.totalCols}% - 4px)`,
+                              backgroundColor: palette.bg,
+                              borderColor: event.color ?? palette.border,
+                              color: event.color ?? palette.text
+                            }}
+                          >
+                            <div className="truncate font-semibold">{event.title}</div>
+                            {(event.end - event.start) * HOUR_HEIGHT >= 42 && (
+                              <div className="mt-0.5 truncate text-[9px]" style={{ color: palette.subtext }}>
+                                {formatCalendarTime(event.start)} – {formatCalendarTime(event.end)}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const SELECTION_CACHE_PREFIX = 'syntgrid-selection-cache:';
 
 function getSelectionCache(accountEmail: string): SelectionCache | null {
@@ -1896,45 +2037,18 @@ export default function App() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-4 lg:grid-cols-2 sm:p-5">
-              {[
-                {
-                  title: 'Current schedule',
-                  events: calendars.find((calendar) => calendar.id === 'cal-me')?.events ?? []
-                },
-                {
-                  title: 'Proposed schedule',
-                  events: [
-                    ...(calendars.find((calendar) => calendar.id === 'cal-me')?.events ?? [])
-                      .filter((event) => !event.id.startsWith('ai-')),
-                    ...pendingAiReview
-                  ]
-                }
-              ].map((preview) => (
-                <div key={preview.title} className="min-w-[620px] overflow-hidden rounded-xl border border-[#303030] bg-[#121212]">
-                  <div className="border-b border-[#2b2b2b] bg-[#1d1d1d] px-3 py-2 text-sm font-semibold text-zinc-100">{preview.title}</div>
-                  <div className="grid grid-cols-7 border-b border-[#2b2b2b] bg-[#161616]">
-                    {DAYS_OF_WEEK.map((day) => <div key={day.dayIndex} className="border-r border-[#242424] px-2 py-2 text-center text-[10px] font-medium text-zinc-400 last:border-r-0">{day.name}</div>)}
-                  </div>
-                  <div className="grid h-[36rem] grid-cols-7 bg-[#141414]">
-                    {DAYS_OF_WEEK.map((day) => (
-                      <div key={day.dayIndex} className="relative border-r border-[#242424] last:border-r-0">
-                        {HOURS.map((hour) => <div key={hour} className="absolute inset-x-0 border-t border-[#222]" style={{ top: `${((hour - HOURS[0]) / (HOURS[HOURS.length - 1] - HOURS[0] + 1)) * 100}%` }} />)}
-                        {preview.events.filter((event) => event.dayIndex === day.dayIndex && (event.weekOffset ?? 0) === weekOffset).map((event) => (
-                          <div
-                            key={event.id}
-                            className="absolute inset-x-1 overflow-hidden rounded border border-sky-400/60 bg-sky-400/20 px-1 py-1 text-[9px] text-sky-100"
-                            style={{ top: `${(event.start / 24) * 100}%`, height: `${Math.max(1.5, ((event.end - event.start) / 24) * 100)}%` }}
-                          >
-                            <span className="font-semibold">{event.title}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <ScheduleComparisonGrid
+              currentEvents={calendars.find((calendar) => calendar.id === 'cal-me')?.events ?? []}
+              proposedEvents={[
+                ...(calendars.find((calendar) => calendar.id === 'cal-me')?.events ?? [])
+                  .filter((event) => !event.id.startsWith('ai-')),
+                ...pendingAiReview
+              ]}
+              weekOffset={weekOffset}
+              weekStart={weekStart}
+              todayWeekOffset={todayWeekOffset}
+              todayDayIndex={todayDayIndex}
+            />
             <div className="flex justify-end gap-2 border-t border-[#2b2b2b] p-4">
               <button type="button" onClick={() => setPendingAiReview(null)} className="rounded-xl border border-[#383838] bg-[#242424] px-4 py-2.5 text-xs font-semibold text-zinc-200 hover:bg-[#2e2e2e]">Cancel</button>
               <button type="button" onClick={() => void acceptAiSchedule()} className="rounded-xl bg-emerald-400 px-4 py-2.5 text-xs font-bold text-[#171717] hover:brightness-110">Accept proposed schedule</button>
