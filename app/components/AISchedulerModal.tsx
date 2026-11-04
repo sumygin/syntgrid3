@@ -84,20 +84,45 @@ export default function AISchedulerModal({
   const [promptNotes, setPromptNotes] = useState(savedPromptNotes);
   const [isSavingPromptNotes, setIsSavingPromptNotes] = useState(false);
   const [trellisToken, setTrellisToken] = useState<string | null>(null);
+  const [trellisRefreshToken, setTrellisRefreshToken] = useState<string | null>(null);
   const [trellisBoards, setTrellisBoards] = useState<{ id: string; name: string; role: string }[]>([]);
   const [trellisBoardId, setTrellisBoardId] = useState('');
   const [trellisTasksText, setTrellisTasksText] = useState('No Trellis board linked.');
 
   const trellisWindowRef = useRef<Window | null>(null);
   const trellisBoardStorageKey = 'syntgrid:trellis-board';
+  const trellisRefreshTokenStorageKey = 'syntgrid:trellis-refresh-token';
+
+  const refreshTrellisSession = useCallback(async (refreshToken: string) => {
+    const response = await fetch(`${trellisUrl}/api/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+      cache: 'no-store'
+    });
+    if (!response.ok) throw new Error('The Trellis session has expired. Relink Trellis.');
+    const session = await response.json() as { accessToken?: string; refreshToken?: string };
+    if (!session.accessToken) throw new Error('Trellis did not return a valid session.');
+    const nextRefreshToken = session.refreshToken || refreshToken;
+    window.localStorage.setItem(trellisRefreshTokenStorageKey, nextRefreshToken);
+    window.sessionStorage.setItem('syntgrid:trellis-token', session.accessToken);
+    setTrellisRefreshToken(nextRefreshToken);
+    setTrellisToken(session.accessToken);
+    return session.accessToken;
+  }, [trellisUrl]);
 
   const fetchTrellisTasks = useCallback(async (): Promise<string> => {
     const board = trellisBoards.find((item) => item.id === trellisBoardId);
     if (!board || !trellisToken) return 'No Trellis board linked.';
-    const response = await fetch(`${trellisUrl}/api/board?id=${encodeURIComponent(board.id)}`, {
-      headers: { Authorization: `Bearer ${trellisToken}` },
+    const fetchBoard = (token: string) => fetch(`${trellisUrl}/api/board?id=${encodeURIComponent(board.id)}`, {
+      headers: { Authorization: 'Bearer ' + token },
       cache: 'no-store'
     });
+    let response = await fetchBoard(trellisToken);
+    if (response.status === 401 && trellisRefreshToken) {
+      const refreshedToken = await refreshTrellisSession(trellisRefreshToken);
+      response = await fetchBoard(refreshedToken);
+    }
     if (!response.ok) throw new Error('Could not read the selected Trellis board.');
     const data = await response.json() as {
       l?: {
@@ -118,7 +143,7 @@ export default function AISchedulerModal({
       })
     );
     return lines.length ? lines.join('\n') : 'No incomplete tasks on the selected Trellis board.';
-  }, [trellisBoardId, trellisBoards, trellisToken, trellisUrl]);
+  }, [refreshTrellisSession, trellisBoardId, trellisBoards, trellisRefreshToken, trellisToken, trellisUrl]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -132,7 +157,9 @@ export default function AISchedulerModal({
         }
       }
       const savedToken = window.sessionStorage.getItem('syntgrid:trellis-token');
+      const savedRefreshToken = window.localStorage.getItem(trellisRefreshTokenStorageKey);
       if (savedToken) setTrellisToken(savedToken);
+      if (savedRefreshToken) setTrellisRefreshToken(savedRefreshToken);
     }, 0);
     return () => window.clearTimeout(timeoutId);
   }, []);
@@ -140,10 +167,14 @@ export default function AISchedulerModal({
   useEffect(() => {
     const handleMessage = (event: MessageEvent<unknown>) => {
       if (event.origin !== new URL(trellisUrl).origin || event.source !== trellisWindowRef.current) return;
-      const data = event.data as { type?: string; accessToken?: string };
+      const data = event.data as { type?: string; accessToken?: string; refreshToken?: string };
       if (data.type === 'TRELLIS_SUPABASE_SESSION' && data.accessToken) {
         window.sessionStorage.setItem('syntgrid:trellis-token', data.accessToken);
         setTrellisToken(data.accessToken);
+        if (data.refreshToken) {
+          window.localStorage.setItem(trellisRefreshTokenStorageKey, data.refreshToken);
+          setTrellisRefreshToken(data.refreshToken);
+        }
       }
     };
     window.addEventListener('message', handleMessage);
