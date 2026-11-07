@@ -385,7 +385,7 @@ function ScheduleComparisonGrid({
           </div>
         </div>
         <div className="relative flex flex-none" style={{ height: `${HOURS.length * HOUR_HEIGHT}px` }}>
-          <div className="sticky left-0 z-10 w-16 shrink-0 border-r border-[#262626] bg-[#141414]">
+          <div className="calendar-gutter sticky left-0 z-10 w-16 shrink-0 border-r border-[#262626] bg-[#141414]">
             {HOURS.map((hour) => (
               <div key={hour} className="border-b border-[#222] pr-2.5 pt-1 text-right text-[11px] font-medium text-zinc-500" style={{ height: `${HOUR_HEIGHT}px` }}>
                 {formatCalendarTime(hour)}
@@ -393,7 +393,7 @@ function ScheduleComparisonGrid({
             ))}
           </div>
           <div className="relative grid flex-1 grid-cols-7">
-            <div className="pointer-events-none absolute inset-0 z-0 flex flex-col">
+            <div className="calendar-grid-lines pointer-events-none absolute inset-0 z-0 flex flex-col">
               {HOURS.map((hour) => (
                 <div key={hour} className="w-full border-b border-[#222]" style={{ height: `${HOUR_HEIGHT}px` }}>
                   <div className="h-1/2 border-b border-dashed border-[#1c1c1c]" />
@@ -1907,7 +1907,7 @@ export default function App() {
       {/* ====================================================================
           TOP NAVIGATION BAR (Matches your Outlook/Scientia week bar)
          ==================================================================== */}
-      <header className="min-h-14 shrink-0 bg-[#171717] border-b border-[#262626] px-3 py-2 sm:px-4 md:h-14 md:py-0 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2 sm:gap-4 z-20">
+      <header className="app-header min-h-14 shrink-0 bg-[#171717] border-b border-[#262626] px-3 py-2 sm:px-4 md:h-14 md:py-0 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2 sm:gap-4 z-20">
         {/* Left: Brand + Week Navigation */}
         <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:gap-4 md:flex-1">
           <div className="flex items-center gap-2.5 pr-3 border-r border-[#2a2a2a]">
@@ -2064,7 +2064,7 @@ export default function App() {
         {/* ==================================================================
             MAIN WEEK-CENTERED SPLIT-COLUMN CALENDAR VIEWPORT
            ================================================================== */}
-        <main className="h-[70dvh] min-h-[28rem] flex-none flex flex-col overflow-hidden bg-[#121212] md:h-auto md:min-h-0 md:flex-1">
+        <main className="app-calendar h-[70dvh] min-h-[28rem] flex-none flex flex-col overflow-hidden bg-[#121212] md:h-auto md:min-h-0 md:flex-1">
           {/* Scrollable Wrapper */}
           <div
             ref={calendarScrollRef}
@@ -2085,9 +2085,9 @@ export default function App() {
               }}
             >
               {/* STICKY DAY HEADERS ROW */}
-              <div className="sticky top-0 z-20 bg-[#161616] border-b border-[#262626] flex">
+              <div className="calendar-header sticky top-0 z-20 bg-[#161616] border-b border-[#262626] flex">
                 {/* Top-Left Time Gutter Corner */}
-                <div className="sticky left-0 z-30 w-16 shrink-0 border-r border-[#262626] bg-[#161616] flex items-center justify-center text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+                <div className="calendar-gutter sticky left-0 z-30 w-16 shrink-0 border-r border-[#262626] bg-[#161616] flex items-center justify-center text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
                   GMT+1
                 </div>
 
@@ -2099,9 +2099,9 @@ export default function App() {
                     return (
                     <div
                       key={day.dayIndex}
-                      className={`border-r border-[#242424] last:border-r-0 flex flex-col justify-between ${
+                      className={`calendar-day border-r border-[#242424] last:border-r-0 flex flex-col justify-between ${
                         isCurrentDay ? 'bg-[#1a1c23]' : ''
-                      }`}
+                      } ${isCurrentDay ? 'is-today' : ''}`}
                     >
                       {/* Top Accent Line for Current Day */}
                       <div
@@ -2371,12 +2371,12 @@ export default function App() {
         {/* ==================================================================
             RIGHT SIDEBAR: INCOMING REQUESTS + FRIENDS/CALENDARS CHECKLIST
            ================================================================== */}
-        <aside className="w-full shrink-0 bg-[#171717] border-t border-[#262626] flex flex-col justify-between z-20 md:w-80 md:border-l md:border-t-0">
+        <aside className="app-sidebar w-full shrink-0 bg-[#171717] border-t border-[#262626] flex flex-col justify-between z-20 md:w-80 md:border-l md:border-t-0">
           <div className="flex-1 overflow-y-auto p-4 space-y-6">
             {/* 1. INCOMING FRIEND REQUESTS SECTION */}
             <div>
               <div className="flex items-center justify-between mb-2.5">
-                <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                <span className="sidebar-section-title text-xs font-semibold uppercase tracking-wider text-zinc-400">
                   Friend Requests
                 </span>
                 {friendRequests.length > 0 && (
@@ -2395,7 +2395,7 @@ export default function App() {
                   {friendRequests.map((req: FriendRequest) => (
                     <div
                       key={req.id}
-                      className="p-3 rounded-xl bg-[#1e1e1e] border border-[#2c2c2c] flex flex-col gap-2.5 shadow-sm"
+                      className="friend-request-card p-3 rounded-xl bg-[#1e1e1e] border border-[#2c2c2c] flex flex-col gap-2.5 shadow-sm"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
@@ -2433,7 +2433,7 @@ export default function App() {
             <div>
               <div className="flex items-center justify-between mb-2.5">
                 <div>
-                  <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  <span className="sidebar-section-title text-xs font-semibold uppercase tracking-wider text-zinc-400">
                     Calendars & Friends
                   </span>
                   <span className="ml-2 text-[11px] text-zinc-500">
@@ -2487,7 +2487,7 @@ export default function App() {
                         if (friendEmail) void toggleFriendInGroup(group, friendEmail);
                         setDraggingFriendEmail(null);
                       }}
-                      className={`rounded-xl border p-2.5 transition ${
+                      className={`friend-group-card rounded-xl border p-2.5 transition ${
                         draggingFriendEmail
                           ? 'border-dashed border-[#ff9f43] bg-[#ff9f43]/5'
                           : 'border-[#343434] bg-[#1c1c1c]'
@@ -2551,10 +2551,10 @@ export default function App() {
                       setDraggingFriendEmail(cal.email);
                     }}
                     onDragEnd={() => setDraggingFriendEmail(null)}
-                    className={`group p-2.5 rounded-xl border transition cursor-pointer flex items-center justify-between gap-2.5 ${
+                    className={`calendar-source-card group p-2.5 rounded-xl border transition cursor-pointer flex items-center justify-between gap-2.5 ${
                       cal.checked
                         ? 'bg-[#202020] border-[#343434]'
-                        : 'bg-[#181818] border-[#242424] opacity-65 hover:opacity-100'
+                        : 'is-inactive bg-[#181818] border-[#242424] opacity-65 hover:opacity-100'
                     } ${cal.type === 'outlook-friend' ? 'cursor-grab active:cursor-grabbing' : ''}`}
                     title={cal.type === 'outlook-friend' ? 'Drag this friend to a group' : undefined}
                   >
@@ -2636,13 +2636,13 @@ export default function App() {
           </div>
 
           {/* 3. BOTTOM "+ ADD" BUTTON */}
-          <div className="p-4 border-t border-[#262626] bg-[#151515]">
+          <div className="sidebar-footer p-4 border-t border-[#262626] bg-[#151515]">
             <button
               onClick={() => {
                 setUploadError('');
                 setIsAddModalOpen(true);
               }}
-              className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#ff6b6b] via-[#ff9f43] to-[#feca57] hover:brightness-105 text-[#121212] font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
+              className="add-calendar-button w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#ff6b6b] via-[#ff9f43] to-[#feca57] hover:brightness-105 text-[#121212] font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
               Add Friend or Room Timetable

@@ -1,8 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0e1013;
+  --foreground: #f4f4f5;
+  --surface-0: #0e1013;
+  --surface-1: #15181d;
+  --surface-2: #1b1f26;
+  --surface-3: #222730;
+  --line: #2a3039;
+  --line-soft: #20252d;
+  --muted: #8d96a3;
+  --accent: #ff9f43;
 }
 
 @theme inline {
@@ -24,7 +32,44 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
   overflow-x: hidden;
+  color-scheme: dark;
   -webkit-tap-highlight-color: transparent;
+}
+
+* {
+  scrollbar-color: #3a424e transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: #111419;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #343c48;
+  border: 2px solid #111419;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #4a5564;
+}
+
+*::-webkit-scrollbar-corner {
+  background: #111419;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 button,
@@ -33,4 +78,72 @@ input,
 select,
 textarea {
   touch-action: manipulation;
+}
+
+/* Shared application chrome. Keeping these rules here avoids tiny visual
+   differences between the calendar, source cards, and modal controls. */
+.app-header {
+  background: var(--surface-1) !important;
+  border-color: var(--line) !important;
+  box-shadow: 0 1px 0 rgb(0 0 0 / 20%);
+}
+
+.app-calendar {
+  background: var(--surface-0) !important;
+}
+
+.calendar-header {
+  background: var(--surface-1) !important;
+  border-color: var(--line) !important;
+}
+
+.calendar-gutter {
+  background: var(--surface-1) !important;
+  border-color: var(--line) !important;
+  color: var(--muted) !important;
+}
+
+.calendar-day {
+  border-color: var(--line-soft) !important;
+}
+
+.calendar-day.is-today {
+  background: rgb(84 160 255 / 8%);
+}
+
+.calendar-grid-lines {
+  border-color: var(--line-soft) !important;
+}
+
+.app-sidebar {
+  background: var(--surface-1) !important;
+  border-color: var(--line) !important;
+}
+
+.sidebar-section-title {
+  color: #aeb6c2 !important;
+  letter-spacing: .12em;
+}
+
+.friend-request-card,
+.calendar-source-card,
+.friend-group-card {
+  background: var(--surface-2) !important;
+  border-color: var(--line) !important;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 16%);
+}
+
+.calendar-source-card.is-inactive {
+  background: var(--surface-1) !important;
+}
+
+.sidebar-footer {
+  background: var(--surface-1) !important;
+  border-color: var(--line) !important;
+}
+
+.add-calendar-button {
+  background: var(--accent) !important;
+  color: #171717 !important;
+  box-shadow: 0 8px 20px rgb(255 159 67 / 16%);
 }
