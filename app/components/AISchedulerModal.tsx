@@ -16,6 +16,8 @@ interface WeekScheduleToolsProps {
   weekStartIso: string;
   existingScheduleText: string;
   existingAiScheduleText: string;
+  eventSearch: string;
+  onEventSearchChange: (value: string) => void;
   savedPromptNotes: string;
   onSavePromptNotes: (notes: string) => Promise<void>;
   trellisUrl: string;
@@ -71,6 +73,8 @@ export default function AISchedulerModal({
   weekStartIso,
   existingScheduleText,
   existingAiScheduleText,
+  eventSearch,
+  onEventSearchChange,
   savedPromptNotes,
   onSavePromptNotes,
   trellisUrl,
@@ -92,6 +96,7 @@ export default function AISchedulerModal({
   const trellisWindowRef = useRef<Window | null>(null);
   const trellisBoardStorageKey = 'syntgrid:trellis-board';
   const trellisRefreshTokenStorageKey = 'syntgrid:trellis-refresh-token';
+  const trellisTokenStorageKey = 'syntgrid:trellis-token';
 
   const refreshTrellisSession = useCallback(async (refreshToken: string) => {
     const response = await fetch(`${trellisUrl}/api/session`, {
@@ -105,7 +110,7 @@ export default function AISchedulerModal({
     if (!session.accessToken) throw new Error('Trellis did not return a valid session.');
     const nextRefreshToken = session.refreshToken || refreshToken;
     window.localStorage.setItem(trellisRefreshTokenStorageKey, nextRefreshToken);
-    window.sessionStorage.setItem('syntgrid:trellis-token', session.accessToken);
+    window.localStorage.setItem(trellisTokenStorageKey, session.accessToken);
     setTrellisRefreshToken(nextRefreshToken);
     setTrellisToken(session.accessToken);
     return session.accessToken;
@@ -156,20 +161,35 @@ export default function AISchedulerModal({
           window.localStorage.removeItem(trellisBoardStorageKey);
         }
       }
-      const savedToken = window.sessionStorage.getItem('syntgrid:trellis-token');
+      const savedToken = window.localStorage.getItem(trellisTokenStorageKey);
       const savedRefreshToken = window.localStorage.getItem(trellisRefreshTokenStorageKey);
       if (savedToken) setTrellisToken(savedToken);
-      if (savedRefreshToken) setTrellisRefreshToken(savedRefreshToken);
+      if (savedRefreshToken) {
+        setTrellisRefreshToken(savedRefreshToken);
+        void refreshTrellisSession(savedRefreshToken).catch(() => {
+          setTrellisToken(savedToken);
+        });
+      }
     }, 0);
     return () => window.clearTimeout(timeoutId);
-  }, []);
+  }, [refreshTrellisSession]);
+
+  useEffect(() => {
+    if (!trellisRefreshToken) return;
+    const intervalId = window.setInterval(() => {
+      void refreshTrellisSession(trellisRefreshToken).catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'Could not refresh Trellis.');
+      });
+    }, 45 * 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, [refreshTrellisSession, showToast, trellisRefreshToken]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent<unknown>) => {
       if (event.origin !== new URL(trellisUrl).origin || event.source !== trellisWindowRef.current) return;
       const data = event.data as { type?: string; accessToken?: string; refreshToken?: string };
       if (data.type === 'TRELLIS_SUPABASE_SESSION' && data.accessToken) {
-        window.sessionStorage.setItem('syntgrid:trellis-token', data.accessToken);
+        window.localStorage.setItem(trellisTokenStorageKey, data.accessToken);
         setTrellisToken(data.accessToken);
         if (data.refreshToken) {
           window.localStorage.setItem(trellisRefreshTokenStorageKey, data.refreshToken);
@@ -198,7 +218,7 @@ export default function AISchedulerModal({
         window.localStorage.setItem(trellisBoardStorageKey, JSON.stringify(selectedBoard));
       }
     }).catch((error: unknown) => {
-      window.sessionStorage.removeItem('syntgrid:trellis-token');
+      window.localStorage.removeItem(trellisTokenStorageKey);
       setTrellisToken(null);
       showToast(error instanceof Error ? error.message : 'Could not link Trellis.');
     });
@@ -483,6 +503,17 @@ Wait for my requested changes before producing the final JSON.`;
       >
         <Clipboard className="h-3.5 w-3.5" /> AI scheduler
       </button>
+      <label className="relative flex items-center">
+        <span className="sr-only">Search events</span>
+        <input
+          type="search"
+          value={eventSearch}
+          onChange={(event) => onEventSearchChange(event.target.value)}
+          placeholder="Search events"
+          aria-label="Search events"
+          className="w-32 rounded-md border border-[#383838] bg-[#111] px-2.5 py-1.5 text-xs text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-sky-400 sm:w-40"
+        />
+      </label>
       <button
         type="button"
         onClick={() => setIsTrellisOpen(true)}

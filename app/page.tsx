@@ -719,6 +719,7 @@ export default function App() {
   const [isSavingEventDetails, setIsSavingEventDetails] = useState(false);
   const [eventResize, setEventResize] = useState<EventResizeState | null>(null);
   const [isPanningCalendar, setIsPanningCalendar] = useState(false);
+  const [eventSearch, setEventSearch] = useState('');
 
   // Rest of your state and handlers...
   // Week offset state
@@ -1048,6 +1049,7 @@ export default function App() {
   const activeCalendars: CalendarItemWithPalette[] = useMemo(() => {
     return calendarsWithColors.filter((c) => c.checked);
   }, [calendarsWithColors]);
+  const normalizedEventSearch = eventSearch.trim().toLocaleLowerCase();
 
   const existingScheduleText = serializeSchedule(
     weekStart.toISOString(),
@@ -1973,6 +1975,8 @@ export default function App() {
             weekStartIso={weekStart.toISOString()}
             existingScheduleText={existingScheduleText}
             existingAiScheduleText={existingAiScheduleText}
+            eventSearch={eventSearch}
+            onEventSearchChange={setEventSearch}
             savedPromptNotes={savedPromptNotes}
             onSavePromptNotes={savePromptNotes}
             trellisUrl={process.env.NEXT_PUBLIC_TRELLIS_URL || 'https://trellllis.vercel.app'}
@@ -2217,7 +2221,12 @@ export default function App() {
                         /* Split each Day into parallel vertical slices */
                         activeCalendars.map((cal: CalendarItemWithPalette) => {
                           const dayEvents = cal.events.filter(
-                            (ev: CalendarEvent) => ev.dayIndex === day.dayIndex && (ev.weekOffset ?? 0) === weekOffset
+                            (ev: CalendarEvent) =>
+                              ev.dayIndex === day.dayIndex &&
+                              (ev.weekOffset ?? 0) === weekOffset &&
+                              (!normalizedEventSearch ||
+                                [ev.title, ev.location, ev.lecturer, ev.category]
+                                  .some((value) => value.toLocaleLowerCase().includes(normalizedEventSearch)))
                           );
                           const positionedEvents: PositionedEvent[] = layoutEventsInSubcolumn(dayEvents);
 
