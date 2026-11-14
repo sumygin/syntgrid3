@@ -1,5 +1,7 @@
 # syntgrid
 
+I was tired of asking my uni friends what they had and when their lunch break was, so I built syntgrid, which allows you to download your Outlook calendar and share it here. It also has a system for planning your week using your LLM; it also takes into account your todos through **trellis**. I use this as my scheduling application, check it out at https://syntgrid.vercel.app 
+
 A full-stack intelligent scheduling and calendar-sharing platform built for university students, powered by Next.js, Prisma, MongoDB, and an LLM scheduling pipeline.
 
 ## Check it out
