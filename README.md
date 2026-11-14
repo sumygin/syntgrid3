@@ -2,7 +2,7 @@
 
 A full-stack intelligent scheduling and calendar-sharing platform built for university students, powered by Next.js, Prisma, MongoDB, and an LLM scheduling pipeline.
 
-###Check it out
+## Check it out
 
 Live at https://syntgrid.vercel.app
 
