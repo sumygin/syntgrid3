@@ -1,73 +1,29 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# syntgrid
 
-## Getting Started
+A full-stack intelligent scheduling and calendar-sharing platform built for university students, powered by Next.js, Prisma, MongoDB, and an LLM scheduling pipeline.
 
-First, run the development server:
+###Check it out
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+Live at https://syntgrid.vercel.app
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Overview
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`syntgrid` streamlines how students organise coursework, lectures, and society commitments. Beyond synchronising and sharing university timetables, it integrates an AI scheduling pipeline that parses natural-language instructions and constraints into structured calendar events, automatically resolving conflicts across shared schedules.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Key Features
 
-## Authentication and calendar setup
+- **Natural-Language AI Scheduling:** Describe tasks, deadlines, or recurring study blocks in plain English; the LLM pipeline extracts structured parameters (duration, priority, time bounds) and slots them into open calendar windows.
+- **University Timetable Sync & Sharing:** Import `.ics` lecture feeds and share read/write or free/busy availability grids with study groups and project teammates.
+- **Conflict Detection & Multi-User Overlays:** Instantly compute overlapping free slots across multiple university calendars for group meetings.
+- **Type-Safe Persistence:** Built on Prisma ORM with MongoDB for flexible document storage and strict TypeScript schema validation.
 
-Configure NextAuth with `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, and the provider credentials
-`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` and
-`AZURE_AD_CLIENT_ID`, `AZURE_AD_CLIENT_SECRET`, and `AZURE_AD_TENANT_ID`. Microsoft sign-in is
-restricted to the configured Entra tenant: use its tenant GUID (not `common`, `organizations`,
-or `consumers`). Microsoft sign-in remains disabled until all three values are set.
-Set `DATABASE_URL` to the MongoDB connection string used by Prisma.
-After applying schema changes, run `npx prisma db push` from the app directory.
+## Tech Stack
 
-For local Google OAuth, set `NEXTAUTH_URL=http://localhost:3000` and add
-`http://localhost:3000/api/auth/callback/google` as an authorized redirect URI in the
-Google OAuth client. For a deployed app, set `NEXTAUTH_URL` to its public HTTPS origin and
-register `<NEXTAUTH_URL>/api/auth/callback/google` instead. Add both Google credentials to
-the server environment and restart/redeploy; Google sign-in is hidden until both are set.
+- **Framework:** Next.js (App Router, React, TypeScript)
+- **Database & ORM:** MongoDB, Prisma
+- **AI / LLM Pipeline:** Structured output parsing & constraint-aware slot allocation
+- **Styling:** Tailwind CSS
 
-Google and Microsoft are used only to sign in. Users upload the specific Imperial Outlook
-`.ics` file they want to compare; syntgrid stores that file and its parsed events on their
-account. Calendar data is shared only with accepted friends. The in-app tutorial is at
-`/tutorial`.
+## License
 
-## Trellis linking
-
-Set `NEXT_PUBLIC_TRELLIS_URL` to the deployed Trellis origin (for example,
-`https://trellllis.vercel.app`) in local `.env.local` and in the Syntgrid
-Vercel project. The AI scheduler opens Trellis in a popup, receives the Supabase session tokens,
-stores them locally for persistent linking, and includes incomplete tasks from
-the selected board in the copied scheduling prompt. Tokens are never included
-in the prompt and are refreshed automatically while the app is open.
-
-On the Trellis Vercel project, set `SYNTGRID_ORIGIN` to the exact Syntgrid
-origin (`http://localhost:3000` locally or `https://syntgrid.vercel.app` in
-production). The Trellis Supabase project must have the current
-`trellis/supabase/schema.sql` applied. Configure the desired Supabase Auth
-providers and add the Trellis deployment URL under Authentication > URL
-Configuration.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT
